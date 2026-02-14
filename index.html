@@ -607,7 +607,6 @@
         // ========================================
         const STORAGE_KEY = 'lifeTrace_v1_2';
         const EARTH_CIRCUMFERENCE = 40075;
-        const STATION_MERGE_DISTANCE_KM = 1.0;
 
         let currentYear = new Date().getFullYear();
         let data = { version: '1.2', years: {}, usedSegments: {} };
@@ -729,7 +728,7 @@
         }
 
         // ========================================
-        // 駅データ読み込み（LineString/MultiLineString完全対応）
+        // 駅データ読み込み（駅名＋都道府県で必ず統合、距離判定なし）
         // ========================================
         async function loadStations() {
             try {
@@ -745,17 +744,23 @@
                 geojson.features.forEach(f => {
                     const props = f.properties;
                     
+                    // 駅名取得・正規化
                     const rawName = props.N02_005 || props.N02_005e || props.stationName || 
                                    props.駅名 || props.name || props.NAME;
                     if (!rawName) return;
                     
+                    // (2), (3)などを削除
                     const name = rawName.replace(/\s*\(\d+\)\s*/g, '').trim();
                     if (!name) return;
                     
+                    // 都道府県取得（N02_002）
                     let pref = props.N02_002 || '';
+                    
+                    // 事業者・路線取得
                     const operator = props.N02_003 || '不明';
                     const railway = props.N02_004 || '不明';
                     
+                    // 座標取得（LineString/Point/MultiPoint対応）
                     let coords = null;
                     try {
                         if (f.geometry) {
@@ -778,41 +783,35 @@
                     
                     if (!coords) return;
                     
+                    // 都道府県が不明な場合は最寄り市区町村から取得
                     if (!pref && cityIndex.length > 0) {
                         const nearestCity = findNearestCityFull(coords);
                         if (nearestCity) pref = nearestCity.pref;
                     }
                     
+                    // 統合キー：都道府県_駅名（距離判定なし）
                     const key = `${pref}_${name}`;
                     
                     if (stationMap.has(key)) {
+                        // 既存の駅に路線を追加（距離に関係なく統合）
                         const existing = stationMap.get(key);
-                        const distance = haversineDistance(existing.coordinates, coords);
                         
-                        if (distance <= STATION_MERGE_DISTANCE_KM) {
-                            const isDuplicate = existing.railways.some(r => 
-                                r.operator === operator && r.railway === railway
-                            );
-                            
-                            if (!isDuplicate) {
-                                existing.railways.push({ operator, railway });
-                            }
-                            
-                            existing.coordsList.push(coords);
-                            const avgLat = existing.coordsList.reduce((sum, c) => sum + c[0], 0) / existing.coordsList.length;
-                            const avgLng = existing.coordsList.reduce((sum, c) => sum + c[1], 0) / existing.coordsList.length;
-                            existing.coordinates = [avgLat, avgLng];
-                        } else {
-                            const newKey = `${key}_${stationMap.size}`;
-                            stationMap.set(newKey, {
-                                name,
-                                pref,
-                                railways: [{ operator, railway }],
-                                coordinates: coords,
-                                coordsList: [coords]
-                            });
+                        // 重複路線チェック
+                        const isDuplicate = existing.railways.some(r => 
+                            r.operator === operator && r.railway === railway
+                        );
+                        
+                        if (!isDuplicate) {
+                            existing.railways.push({ operator, railway });
                         }
+                        
+                        // 座標の平均を取る
+                        existing.coordsList.push(coords);
+                        const avgLat = existing.coordsList.reduce((sum, c) => sum + c[0], 0) / existing.coordsList.length;
+                        const avgLng = existing.coordsList.reduce((sum, c) => sum + c[1], 0) / existing.coordsList.length;
+                        existing.coordinates = [avgLat, avgLng];
                     } else {
+                        // 新規駅として登録
                         stationMap.set(key, {
                             name,
                             pref,
@@ -825,6 +824,7 @@
                 
                 console.log('🔀 統合後:', stationMap.size, '件');
                 
+                // stationIndexに変換（IDは一意）
                 stationMap.forEach((station, key) => {
                     const id = `sta_${key}`.replace(/\s/g, '_');
                     const cityCode = findNearestCity(station.coordinates);
@@ -854,7 +854,7 @@
         }
 
         // ========================================
-        // 路線データ読み込み
+        // 路線データ読み込み（LineString/MultiLineString対応）
         // ========================================
         async function loadRailways() {
             try {
