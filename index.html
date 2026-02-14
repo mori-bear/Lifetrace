@@ -1,0 +1,1567 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>LifeTrace v1.2 - 移動の軌跡</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #f5f5f5;
+            overflow-x: hidden;
+        }
+
+        .header {
+            background: white;
+            padding: 12px 16px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+
+        .app-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: #333;
+        }
+
+        .version {
+            font-size: 10px;
+            color: #999;
+            margin-left: 8px;
+        }
+
+        #map {
+            width: 100%;
+            height: 60vh;
+            background: #e0e0e0;
+        }
+
+        .year-switcher {
+            background: white;
+            padding: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .year-btn {
+            width: 36px;
+            height: 36px;
+            border: none;
+            background: #f0f0f0;
+            border-radius: 8px;
+            font-size: 18px;
+            color: #666;
+            cursor: pointer;
+        }
+
+        .year-btn:active {
+            background: #e0e0e0;
+        }
+
+        .year-display {
+            font-size: 24px;
+            font-weight: 700;
+            color: #007AFF;
+            min-width: 80px;
+            text-align: center;
+        }
+
+        .stats-area {
+            background: white;
+            padding: 20px;
+            margin: 16px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+
+        .stats-title {
+            font-size: 14px;
+            color: #999;
+            margin-bottom: 12px;
+            font-weight: 600;
+        }
+
+        .distance-bar {
+            margin-bottom: 20px;
+        }
+
+        .distance-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 4px;
+        }
+
+        .distance-unit {
+            font-size: 16px;
+            color: #999;
+        }
+
+        .earth-rounds {
+            font-size: 14px;
+            color: #666;
+            margin-top: 8px;
+        }
+
+        .progress-track {
+            width: 100%;
+            height: 6px;
+            background: #eee;
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 12px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #007AFF, #00C8FF);
+            border-radius: 3px;
+            transition: width 0.3s ease;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: #007AFF;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #999;
+            margin-top: 4px;
+        }
+
+        .trips-area {
+            background: white;
+            margin: 16px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            padding: 20px;
+        }
+
+        .trips-title {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 16px;
+            color: #333;
+        }
+
+        .trip-card {
+            border: 1px solid #eee;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .trip-card:active {
+            background: #f8f8f8;
+            border-color: #007AFF;
+        }
+
+        .trip-route {
+            font-size: 15px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 6px;
+        }
+
+        .trip-date-distance {
+            font-size: 13px;
+            color: #999;
+            margin-bottom: 6px;
+        }
+
+        .trip-memo {
+            font-size: 13px;
+            color: #666;
+            line-height: 1.4;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #999;
+            font-size: 14px;
+        }
+
+        .fab {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            width: 56px;
+            height: 56px;
+            background: #007AFF;
+            border-radius: 50%;
+            border: none;
+            box-shadow: 0 4px 12px rgba(0,122,255,0.4);
+            color: white;
+            font-size: 32px;
+            cursor: pointer;
+            z-index: 999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .fab:active {
+            transform: scale(0.95);
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: white;
+            z-index: 2000;
+            overflow-y: auto;
+        }
+
+        .modal.show {
+            display: block;
+        }
+
+        .modal-header {
+            padding: 16px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            align-items: center;
+        }
+
+        .modal-back {
+            width: 32px;
+            height: 32px;
+            border: none;
+            background: #f0f0f0;
+            border-radius: 50%;
+            font-size: 18px;
+            color: #007AFF;
+            cursor: pointer;
+        }
+
+        .modal-title {
+            flex: 1;
+            text-align: center;
+            font-size: 17px;
+            font-weight: 600;
+            margin-right: 32px;
+        }
+
+        .modal-body {
+            padding: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 24px;
+        }
+
+        .form-label {
+            font-size: 14px;
+            font-weight: 600;
+            color: #666;
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 8px;
+            background: #f5f5f5;
+            padding: 4px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+        }
+
+        .tab {
+            flex: 1;
+            padding: 8px;
+            border: none;
+            background: transparent;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            color: #666;
+            cursor: pointer;
+        }
+
+        .tab.active {
+            background: white;
+            color: #007AFF;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .search-box {
+            position: relative;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 15px;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #007AFF;
+        }
+
+        .suggestions {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border: 1px solid #ddd;
+            border-top: none;
+            border-radius: 0 0 8px 8px;
+            max-height: 200px;
+            overflow-y: auto;
+            display: none;
+            z-index: 10;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+
+        .suggestions.show {
+            display: block;
+        }
+
+        .suggestion-item {
+            padding: 12px;
+            border-bottom: 1px solid #f5f5f5;
+            cursor: pointer;
+        }
+
+        .suggestion-item:active {
+            background: #f9f9f9;
+        }
+
+        .suggestion-name {
+            font-size: 14px;
+            font-weight: 500;
+            color: #333;
+        }
+
+        .suggestion-sub {
+            font-size: 12px;
+            color: #999;
+            margin-top: 2px;
+        }
+
+        .selected-preview {
+            background: #E3F2FD;
+            border: 2px solid #2196F3;
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 12px;
+            display: none;
+        }
+
+        .selected-preview.show {
+            display: block;
+        }
+
+        .preview-label {
+            font-size: 11px;
+            color: #1976D2;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .preview-name {
+            font-size: 15px;
+            font-weight: 600;
+            color: #000;
+        }
+
+        .preview-sub {
+            font-size: 12px;
+            color: #666;
+            margin-top: 2px;
+        }
+
+        .date-input, .memo-input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 15px;
+            font-family: inherit;
+        }
+
+        .memo-input {
+            min-height: 100px;
+            resize: vertical;
+        }
+
+        .distance-display {
+            background: #f9f9f9;
+            border: 1px solid #eee;
+            border-radius: 8px;
+            padding: 12px;
+            text-align: center;
+            margin-top: 12px;
+        }
+
+        .distance-display-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: #007AFF;
+        }
+
+        .submit-btn {
+            width: 100%;
+            padding: 16px;
+            background: #007AFF;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 24px;
+        }
+
+        .submit-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .delete-btn {
+            width: 100%;
+            padding: 16px;
+            background: #FF3B30;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="app-title">
+            LifeTrace
+            <span class="version">v1.2</span>
+        </div>
+    </div>
+
+    <div id="map"></div>
+
+    <div class="year-switcher">
+        <button class="year-btn" onclick="changeYear(-1)">◀</button>
+        <div class="year-display" id="yearDisplay">2025</div>
+        <button class="year-btn" onclick="changeYear(1)">▶</button>
+    </div>
+
+    <div class="stats-area">
+        <div class="stats-title">これまでの軌跡</div>
+        <div class="distance-bar">
+            <div class="distance-value">
+                <span id="totalDistance">0</span>
+                <span class="distance-unit">km</span>
+            </div>
+            <div class="earth-rounds">地球 <span id="earthRounds">0.00</span> 周分</div>
+            <div class="progress-track">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+        </div>
+        <div class="stats-grid">
+            <div class="stat-item">
+                <div class="stat-value" id="tripCount">0</div>
+                <div class="stat-label">移動</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="cityCount">0</div>
+                <div class="stat-label">市区町村</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="stationCount">0</div>
+                <div class="stat-label">駅</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="trips-area">
+        <div class="trips-title">最近の移動</div>
+        <div id="tripsList"></div>
+    </div>
+
+    <button class="fab" onclick="openAddModal()">+</button>
+
+    <div id="addModal" class="modal">
+        <div class="modal-header">
+            <button class="modal-back" onclick="closeAddModal()">←</button>
+            <div class="modal-title">移動を記録</div>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <div class="form-label">出発地</div>
+                <div class="tabs">
+                    <button class="tab active" onclick="switchFromTab('station')">駅</button>
+                    <button class="tab" onclick="switchFromTab('city')">市区町村</button>
+                </div>
+                <div class="search-box">
+                    <input type="text" class="search-input" id="fromInput" placeholder="検索..." autocomplete="off">
+                    <div class="suggestions" id="fromSuggestions"></div>
+                </div>
+                <div class="selected-preview" id="fromPreview">
+                    <div class="preview-label">選択中</div>
+                    <div class="preview-name" id="fromPreviewName"></div>
+                    <div class="preview-sub" id="fromPreviewSub"></div>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <div class="form-label">到着地</div>
+                <div class="tabs">
+                    <button class="tab active" onclick="switchToTab('station')">駅</button>
+                    <button class="tab" onclick="switchToTab('city')">市区町村</button>
+                </div>
+                <div class="search-box">
+                    <input type="text" class="search-input" id="toInput" placeholder="検索..." autocomplete="off">
+                    <div class="suggestions" id="toSuggestions"></div>
+                </div>
+                <div class="selected-preview" id="toPreview">
+                    <div class="preview-label">選択中</div>
+                    <div class="preview-name" id="toPreviewName"></div>
+                    <div class="preview-sub" id="toPreviewSub"></div>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <div class="form-label">日付</div>
+                <input type="date" class="date-input" id="tripDate">
+            </div>
+
+            <div class="form-group">
+                <div class="form-label">メモ（任意）</div>
+                <textarea class="memo-input" id="tripMemo" placeholder="友人の結婚式へ。初めて乗った特急しおかぜ"></textarea>
+            </div>
+
+            <div class="distance-display" id="distanceDisplay" style="display:none">
+                移動距離: 約 <span class="distance-display-value" id="calculatedDistance">0</span> km
+            </div>
+
+            <button class="submit-btn" id="submitBtn" onclick="saveTrip()" disabled>記録する</button>
+        </div>
+    </div>
+
+    <div id="detailModal" class="modal">
+        <div class="modal-header">
+            <button class="modal-back" onclick="closeDetailModal()">←</button>
+            <div class="modal-title">移動詳細</div>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <div class="form-label">日付</div>
+                <input type="date" class="date-input" id="editDate">
+            </div>
+            <div class="form-group">
+                <div class="form-label">メモ</div>
+                <textarea class="memo-input" id="editMemo"></textarea>
+            </div>
+            <button class="submit-btn" onclick="updateTrip()">保存</button>
+            <button class="delete-btn" onclick="deleteTrip()">削除</button>
+        </div>
+    </div>
+
+    <script>
+        // ========================================
+        // グローバル変数
+        // ========================================
+        const STORAGE_KEY = 'lifeTrace_v1_2';
+        const EARTH_CIRCUMFERENCE = 40075;
+
+        let currentYear = new Date().getFullYear();
+        let data = { version: '1.2', years: {}, usedSegments: {} };
+        let map, cityLayer, stationLayer, railwayBaseLayer, railwayUsedLayer;
+        let cityIndex = [], stationIndex = [], railwayIndex = [];
+        let selectedFrom = null, selectedTo = null;
+        let fromTabType = 'station', toTabType = 'station';
+        let editingTripId = null;
+
+        // ========================================
+        // 初期化
+        // ========================================
+        async function init() {
+            console.log('🚀 LifeTrace v1.2 起動');
+            loadData();
+            await Promise.all([loadCities(), loadStations(), loadRailways()]);
+            initMap();
+            setupInputs();
+            updateUI();
+            
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('tripDate').value = today;
+            
+            console.log('✅ 初期化完了');
+            console.log('📊 駅データ件数:', stationIndex.length);
+            console.log('📊 市区町村データ件数:', cityIndex.length);
+            console.log('📊 路線データ件数:', railwayIndex.length);
+        }
+
+        // ========================================
+        // データ管理
+        // ========================================
+        function loadData() {
+            const stored = localStorage.getItem(STORAGE_KEY);
+            if (stored) {
+                try {
+                    data = JSON.parse(stored);
+                    if (!data.usedSegments) data.usedSegments = {};
+                } catch (e) {
+                    console.error('データ読み込みエラー:', e);
+                }
+            }
+            
+            const v1Data = localStorage.getItem('lifeTrace_v1');
+            if (v1Data && !stored) {
+                try {
+                    const oldData = JSON.parse(v1Data);
+                    data.years = oldData.years || {};
+                    data.version = '1.2';
+                    data.usedSegments = {};
+                    saveData();
+                    console.log('v1.0 データを v1.2 に移行しました');
+                } catch (e) {
+                    console.error('マイグレーションエラー:', e);
+                }
+            }
+            
+            ensureYearData(currentYear);
+        }
+
+        function saveData() {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        }
+
+        function ensureYearData(year) {
+            if (!data.years[year]) {
+                data.years[year] = { trips: [] };
+            }
+        }
+
+        function getYearData() {
+            ensureYearData(currentYear);
+            return data.years[currentYear];
+        }
+
+        // ========================================
+        // GeoJSON読み込み（市区町村）
+        // ========================================
+        async function loadCities() {
+            try {
+                const response = await fetch('data/cities.geojson');
+                const geojson = await response.json();
+                
+                const seen = new Set();
+                geojson.features.forEach(f => {
+                    const code = f.properties.N03_007;
+                    if (!code || seen.has(code)) return;
+                    seen.add(code);
+                    
+                    const pref = f.properties.N03_001 || '';
+                    const county = f.properties.N03_003 || '';
+                    const city = f.properties.N03_004 || '';
+                    
+                    let name = '';
+                    if (city) {
+                        if (county && county.includes('市')) {
+                            name = `${county} ${city}`;
+                        } else {
+                            name = city;
+                        }
+                    } else if (county && county.includes('市')) {
+                        name = county;
+                    } else {
+                        return;
+                    }
+                    
+                    let coords = [35, 135];
+                    if (f.geometry.type === 'Polygon') {
+                        coords = [f.geometry.coordinates[0][0][1], f.geometry.coordinates[0][0][0]];
+                    } else if (f.geometry.type === 'MultiPolygon') {
+                        coords = [f.geometry.coordinates[0][0][0][1], f.geometry.coordinates[0][0][0][0]];
+                    }
+                    
+                    cityIndex.push({ code, name, pref, coordinates: coords, geom: f });
+                });
+                
+                console.log('✅ 市区町村データ読み込み完了:', cityIndex.length, '件');
+            } catch (e) {
+                console.error('❌ 市区町村データ読み込みエラー:', e);
+            }
+        }
+
+        // ========================================
+        // [修正版] GeoJSON読み込み（駅）
+        // ========================================
+        async function loadStations() {
+            try {
+                console.log('🔄 駅データ読み込み開始...');
+                
+                stationIndex = [];
+                
+                const response = await fetch('data/stations.geojson');
+                const geojson = await response.json();
+                
+                console.log('📥 GeoJSON取得成功、features数:', geojson.features?.length || 0);
+                
+                if (!geojson.features || geojson.features.length === 0) {
+                    console.error('❌ features が空です');
+                    return;
+                }
+                
+                console.log('🔍 最初の駅のプロパティ:', geojson.features[0].properties);
+                
+                const stationMap = new Map();
+                
+                geojson.features.forEach((f, index) => {
+                    const props = f.properties;
+                    
+                    const name = props.N02_005 || props.N02_005e || props.stationName || 
+                                props.駅名 || props.name || props.NAME;
+                    
+                    if (!name) {
+                        return;
+                    }
+                    
+                    let pref = props.N02_002 || '';
+                    
+                    const operator = props.N02_003 || '不明';
+                    const railway = props.N02_004 || '不明';
+                    
+                    let coords = null;
+                    if (f.geometry) {
+                        if (f.geometry.type === 'LineString') {
+                            const lineCoords = f.geometry.coordinates;
+                            if (lineCoords && lineCoords.length > 0) {
+                                let sumLat = 0, sumLng = 0;
+                                lineCoords.forEach(point => {
+                                    sumLng += point[0];
+                                    sumLat += point[1];
+                                });
+                                coords = [sumLat / lineCoords.length, sumLng / lineCoords.length];
+                            }
+                        } else if (f.geometry.type === 'Point') {
+                            coords = [f.geometry.coordinates[1], f.geometry.coordinates[0]];
+                        } else if (f.geometry.type === 'MultiPoint') {
+                            coords = [f.geometry.coordinates[0][1], f.geometry.coordinates[0][0]];
+                        }
+                    }
+                    
+                    if (!coords) {
+                        return;
+                    }
+                    
+                    if (!pref) {
+                        const nearestCity = findNearestCityFull(coords);
+                        if (nearestCity) {
+                            pref = nearestCity.pref;
+                        }
+                    }
+                    
+                    const key = `${pref}_${name}`;
+                    
+                    if (stationMap.has(key)) {
+                        const existing = stationMap.get(key);
+                        
+                        const isDuplicate = existing.railways.some(r => 
+                            r.operator === operator && r.railway === railway
+                        );
+                        
+                        if (!isDuplicate) {
+                            existing.railways.push({ operator, railway });
+                        }
+                        
+                        existing.coordsList.push(coords);
+                        const avgLat = existing.coordsList.reduce((sum, c) => sum + c[0], 0) / existing.coordsList.length;
+                        const avgLng = existing.coordsList.reduce((sum, c) => sum + c[1], 0) / existing.coordsList.length;
+                        existing.coordinates = [avgLat, avgLng];
+                    } else {
+                        stationMap.set(key, {
+                            name: name,
+                            pref: pref,
+                            railways: [{ operator, railway }],
+                            coordinates: coords,
+                            coordsList: [coords]
+                        });
+                    }
+                });
+                
+                console.log('🔀 統合後の駅数:', stationMap.size, '件');
+                
+                stationMap.forEach((station) => {
+                    const id = `sta_${station.pref}_${station.name}`.replace(/\s/g, '_');
+                    const cityCode = findNearestCity(station.coordinates);
+                    
+                    delete station.coordsList;
+                    
+                    stationIndex.push({
+                        id: id,
+                        name: station.name,
+                        pref: station.pref,
+                        railways: station.railways,
+                        cityCode: cityCode,
+                        coordinates: station.coordinates
+                    });
+                });
+                
+                console.log('✅ 駅データ読み込み完了:', stationIndex.length, '件');
+                
+                if (stationIndex.length > 0) {
+                    console.log('📍 登録駅（最初の5件）:');
+                    stationIndex.slice(0, 5).forEach((s, i) => {
+                        console.log(`   ${i + 1}. ${s.name}駅 (${s.pref}) - ${s.railways.map(r => r.railway).join(', ')}`);
+                    });
+                }
+                
+                const multiLineStations = stationIndex.filter(s => s.railways.length > 1);
+                if (multiLineStations.length > 0) {
+                    console.log('🔀 複数路線駅:', multiLineStations.length, '件');
+                    multiLineStations.slice(0, 3).forEach(s => {
+                        console.log(`   ${s.name}駅 (${s.pref}): ${s.railways.map(r => r.railway).join(', ')}`);
+                    });
+                }
+                
+            } catch (e) {
+                console.error('❌ 駅データ読み込みエラー:', e);
+                console.error('   詳細:', e.message);
+            }
+        }
+
+        // ========================================
+        // GeoJSON読み込み（路線）
+        // ========================================
+        async function loadRailways() {
+            try {
+                console.log('🔄 路線データ読み込み開始...');
+                const response = await fetch('data/railways.geojson');
+                const geojson = await response.json();
+                
+                const seen = new Set();
+                geojson.features.forEach((f, index) => {
+                    const props = f.properties;
+                    const operator = props.N02_003;
+                    const railway = props.N02_004;
+                    
+                    if (!operator || !railway) return;
+                    
+                    const key = `${operator}_${railway}`;
+                    if (seen.has(key)) return;
+                    seen.add(key);
+                    
+                    if (index === 0) {
+                        console.log('🔍 最初の路線:', { operator, railway, type: f.geometry?.type });
+                    }
+                    
+                    railwayIndex.push({
+                        operator: operator,
+                        railway: railway,
+                        geometry: f.geometry
+                    });
+                });
+                
+                console.log('✅ 路線データ読み込み完了:', railwayIndex.length, '件');
+            } catch (e) {
+                console.error('❌ 路線データ読み込みエラー:', e);
+            }
+        }
+
+        function findNearestCity(coords) {
+            let minDist = Infinity;
+            let nearestCode = null;
+            cityIndex.forEach(city => {
+                const dist = haversineDistance(coords, city.coordinates);
+                if (dist < minDist) {
+                    minDist = dist;
+                    nearestCode = city.code;
+                }
+            });
+            return nearestCode;
+        }
+
+        function findNearestCityFull(coords) {
+            let minDist = Infinity;
+            let nearestCity = null;
+            cityIndex.forEach(city => {
+                const dist = haversineDistance(coords, city.coordinates);
+                if (dist < minDist) {
+                    minDist = dist;
+                    nearestCity = city;
+                }
+            });
+            return nearestCity;
+        }
+
+        // ========================================
+        // 路線処理関数
+        // ========================================
+        function findNearestPointOnLine(targetCoords, lineCoords) {
+            let minDist = Infinity;
+            let nearestIndex = 0;
+            
+            lineCoords.forEach((point, index) => {
+                const pointLatLng = [point[1], point[0]];
+                const dist = haversineDistance(targetCoords, pointLatLng);
+                if (dist < minDist) {
+                    minDist = dist;
+                    nearestIndex = index;
+                }
+            });
+            
+            return nearestIndex;
+        }
+
+        // ========================================
+        // [修正版] extractSegment - 最小距離を10kmに引き上げ
+        // ========================================
+        function extractSegment(fromCoords, toCoords, railwayGeom) {
+            let lineCoords = [];
+            
+            if (railwayGeom.type === 'LineString') {
+                lineCoords = railwayGeom.coordinates;
+            } else if (railwayGeom.type === 'MultiLineString') {
+                let maxSegmentDistance = 0;
+                let bestLineCoords = null;
+                const MIN_DISTANCE_KM = 10.0;
+                const MIN_POINT_COUNT = 10;
+                
+                railwayGeom.coordinates.forEach(line => {
+                    const fromIndex = findNearestPointOnLine(fromCoords, line);
+                    const toIndex = findNearestPointOnLine(toCoords, line);
+                    
+                    const indexDiff = Math.abs(toIndex - fromIndex);
+                    if (indexDiff < MIN_POINT_COUNT) {
+                        return;
+                    }
+                    
+                    const startIndex = Math.min(fromIndex, toIndex);
+                    const endIndex = Math.max(fromIndex, toIndex);
+                    
+                    const segment = line.slice(startIndex, endIndex + 1);
+                    const segmentLatLng = segment.map(point => [point[1], point[0]]);
+                    let distance = 0;
+                    for (let i = 0; i < segmentLatLng.length - 1; i++) {
+                        distance += haversineDistance(segmentLatLng[i], segmentLatLng[i + 1]);
+                    }
+                    
+                    if (distance < MIN_DISTANCE_KM) {
+                        return;
+                    }
+                    
+                    if (distance > maxSegmentDistance) {
+                        maxSegmentDistance = distance;
+                        bestLineCoords = line;
+                    }
+                });
+                
+                if (!bestLineCoords) {
+                    console.warn('⚠️ 有効な LineString が見つかりませんでした（直線距離にフォールバック）');
+                    return null;
+                }
+                
+                lineCoords = bestLineCoords;
+            } else {
+                return null;
+            }
+            
+            const fromIndex = findNearestPointOnLine(fromCoords, lineCoords);
+            const toIndex = findNearestPointOnLine(toCoords, lineCoords);
+            
+            const startIndex = Math.min(fromIndex, toIndex);
+            const endIndex = Math.max(fromIndex, toIndex);
+            
+            const segment = lineCoords.slice(startIndex, endIndex + 1);
+            return segment.map(point => [point[1], point[0]]);
+        }
+
+        function calculateSegmentDistance(segment) {
+            if (!segment || segment.length < 2) return 0;
+            
+            let totalDistance = 0;
+            for (let i = 0; i < segment.length - 1; i++) {
+                totalDistance += haversineDistance(segment[i], segment[i + 1]);
+            }
+            return totalDistance;
+        }
+
+        function getOperatorColor(operator) {
+            if (operator.includes('四国旅客鉄道')) return '#007AFF';
+            if (operator.includes('西日本旅客鉄道')) return '#1E90FF';
+            return '#FF9500';
+        }
+
+        // ========================================
+        // 地図初期化
+        // ========================================
+        function initMap() {
+            map = L.map('map', { zoomControl: true, preferCanvas: true }).setView([34.0, 133.5], 8);
+            
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
+                attribution: '© OpenStreetMap, © CartoDB'
+            }).addTo(map);
+            
+            railwayBaseLayer = L.layerGroup().addTo(map);
+            railwayUsedLayer = L.layerGroup().addTo(map);
+            cityLayer = L.layerGroup().addTo(map);
+            stationLayer = L.layerGroup().addTo(map);
+            
+            renderMap();
+        }
+
+        function renderMap() {
+            railwayBaseLayer.clearLayers();
+            railwayUsedLayer.clearLayers();
+            cityLayer.clearLayers();
+            stationLayer.clearLayers();
+            
+            railwayIndex.forEach(railway => {
+                if (railway.geometry) {
+                    L.geoJSON(railway.geometry, {
+                        style: { color: '#ccc', weight: 1, opacity: 0.5 }
+                    }).addTo(railwayBaseLayer);
+                }
+            });
+            
+            Object.keys(data.usedSegments).forEach(key => {
+                const segments = data.usedSegments[key];
+                const [operator] = key.split('_');
+                const color = getOperatorColor(operator);
+                
+                segments.forEach(segment => {
+                    L.polyline(segment, {
+                        color: color,
+                        weight: 3,
+                        opacity: 0.9
+                    }).addTo(railwayUsedLayer);
+                });
+            });
+            
+            const stats = deriveStats();
+            
+            stats.visitedCities.forEach(code => {
+                const city = cityIndex.find(c => c.code === code);
+                if (city && city.geom) {
+                    L.geoJSON(city.geom, {
+                        style: { fillColor: '#007AFF', fillOpacity: 0.3, color: '#0051D5', weight: 1 }
+                    }).addTo(cityLayer);
+                }
+            });
+            
+            stats.visitedStations.forEach(id => {
+                const station = stationIndex.find(s => s.id === id);
+                if (station) {
+                    const count = stats.stationVisitCount[id] || 1;
+                    const radius = 4 + Math.log(count + 1) * 2;
+                    
+                    const railwayList = station.railways.map(r => 
+                        `${r.operator}<br>${r.railway}`
+                    ).join('<br>');
+                    
+                    L.circleMarker(station.coordinates, {
+                        radius: radius,
+                        fillColor: '#FF9500',
+                        color: '#fff',
+                        weight: 2,
+                        fillOpacity: 0.8
+                    }).bindPopup(`
+                        <strong>${station.name}駅（${station.pref}）</strong><br>
+                        ${railwayList}<br>
+                        訪問: ${count}回
+                    `).addTo(stationLayer);
+                }
+            });
+        }
+
+        // ========================================
+        // 統計計算
+        // ========================================
+        function deriveStats() {
+            const yearData = getYearData();
+            const cities = new Set();
+            const stations = new Set();
+            const stationVisitCount = {};
+            let totalDistance = 0;
+            
+            yearData.trips.forEach(trip => {
+                if (trip.from.type === 'city') {
+                    cities.add(trip.from.code);
+                } else if (trip.from.type === 'station') {
+                    stations.add(trip.from.id);
+                    if (trip.from.cityCode) cities.add(trip.from.cityCode);
+                    stationVisitCount[trip.from.id] = (stationVisitCount[trip.from.id] || 0) + 1;
+                }
+                
+                if (trip.to.type === 'city') {
+                    cities.add(trip.to.code);
+                } else if (trip.to.type === 'station') {
+                    stations.add(trip.to.id);
+                    if (trip.to.cityCode) cities.add(trip.to.cityCode);
+                    stationVisitCount[trip.to.id] = (stationVisitCount[trip.to.id] || 0) + 1;
+                }
+                
+                totalDistance += trip.distance || 0;
+            });
+            
+            return {
+                visitedCities: Array.from(cities),
+                visitedStations: Array.from(stations),
+                stationVisitCount,
+                totalDistance: Math.round(totalDistance * 10) / 10,
+                earthRounds: totalDistance / EARTH_CIRCUMFERENCE,
+                tripCount: yearData.trips.length
+            };
+        }
+
+        // ========================================
+        // UI更新
+        // ========================================
+        function updateUI() {
+            document.getElementById('yearDisplay').textContent = currentYear;
+            const stats = deriveStats();
+            
+            document.getElementById('totalDistance').textContent = stats.totalDistance.toLocaleString();
+            document.getElementById('earthRounds').textContent = stats.earthRounds.toFixed(4);
+            document.getElementById('tripCount').textContent = stats.tripCount;
+            document.getElementById('cityCount').textContent = stats.visitedCities.length;
+            document.getElementById('stationCount').textContent = stats.visitedStations.length;
+            
+            const progress = Math.min(100, (stats.earthRounds / 0.1) * 100);
+            document.getElementById('progressFill').style.width = progress + '%';
+            
+            updateTripsList();
+            renderMap();
+        }
+
+        function updateTripsList() {
+            const yearData = getYearData();
+            const container = document.getElementById('tripsList');
+            
+            if (yearData.trips.length === 0) {
+                container.innerHTML = '<div class="empty-state">まだ移動の記録がありません</div>';
+                return;
+            }
+            
+            const sorted = [...yearData.trips].sort((a, b) => new Date(b.date) - new Date(a.date));
+            
+            container.innerHTML = sorted.map(trip => {
+                const date = new Date(trip.date);
+                const dateStr = `${date.getMonth() + 1}/${date.getDate()}`;
+                return `
+                    <div class="trip-card" onclick="openDetailModal('${trip.id}')">
+                        <div class="trip-route">${trip.from.name} → ${trip.to.name}</div>
+                        <div class="trip-date-distance">${dateStr} • ${trip.distance}km</div>
+                        ${trip.memo ? `<div class="trip-memo">${trip.memo}</div>` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // ========================================
+        // 距離計算
+        // ========================================
+        function haversineDistance([lat1, lng1], [lat2, lng2]) {
+            const R = 6371;
+            const dLat = toRad(lat2 - lat1);
+            const dLng = toRad(lng2 - lng1);
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+                      Math.sin(dLng/2) * Math.sin(dLng/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c;
+        }
+
+        function toRad(deg) {
+            return deg * (Math.PI / 180);
+        }
+
+        function calculateDistance(from, to) {
+            if (from.type === 'station' && to.type === 'station' && from.railways && to.railways) {
+                const commonRailways = from.railways.filter(fromRailway =>
+                    to.railways.some(toRailway =>
+                        fromRailway.operator === toRailway.operator &&
+                        fromRailway.railway === toRailway.railway
+                    )
+                );
+                
+                if (commonRailways.length > 0) {
+                    const commonRailway = commonRailways[0];
+                    const railway = railwayIndex.find(r =>
+                        r.operator === commonRailway.operator &&
+                        r.railway === commonRailway.railway
+                    );
+                    
+                    if (railway && railway.geometry) {
+                        const segment = extractSegment(from.coordinates, to.coordinates, railway.geometry);
+                        if (segment && segment.length >= 2) {
+                            const actualDistance = calculateSegmentDistance(segment);
+                            console.log(`📏 実キロ計算: ${from.name} → ${to.name} = ${actualDistance.toFixed(1)}km (${commonRailway.railway})`);
+                            return Math.round(actualDistance * 10) / 10;
+                        } else {
+                            console.warn(`⚠️ segment取得失敗、直線距離にフォールバック: ${from.name} → ${to.name}`);
+                        }
+                    }
+                }
+            }
+            
+            const direct = haversineDistance(from.coordinates, to.coordinates);
+            console.log(`📏 直線距離: ${from.name} → ${to.name} = ${direct.toFixed(1)}km`);
+            return Math.round(direct * 10) / 10;
+        }
+
+        // ========================================
+        // 入力システム
+        // ========================================
+        function setupInputs() {
+            document.getElementById('fromInput').addEventListener('input', (e) => {
+                handleSearch(e.target.value, fromTabType, 'fromSuggestions', 'selectFrom');
+            });
+            document.getElementById('toInput').addEventListener('input', (e) => {
+                handleSearch(e.target.value, toTabType, 'toSuggestions', 'selectTo');
+            });
+        }
+
+        function handleSearch(query, type, suggestionsId, selectCallbackName) {
+            const q = query.trim();
+            const container = document.getElementById(suggestionsId);
+            
+            if (!q) {
+                container.classList.remove('show');
+                return;
+            }
+            
+            const index = type === 'station' ? stationIndex : cityIndex;
+            const qLower = q.toLowerCase();
+            
+            let results = index.filter(item => item.name.toLowerCase().includes(qLower));
+            
+            results.sort((a, b) => {
+                const aNameLower = a.name.toLowerCase();
+                const bNameLower = b.name.toLowerCase();
+                
+                const aExact = aNameLower === qLower ? 0 : 1;
+                const bExact = bNameLower === qLower ? 0 : 1;
+                if (aExact !== bExact) return aExact - bExact;
+                
+                const aStarts = aNameLower.startsWith(qLower) ? 0 : 1;
+                const bStarts = bNameLower.startsWith(qLower) ? 0 : 1;
+                if (aStarts !== bStarts) return aStarts - bStarts;
+                
+                return aNameLower.localeCompare(bNameLower);
+            });
+            
+            results = results.slice(0, 20);
+            
+            if (results.length > 0) {
+                container.innerHTML = results.map(item => {
+                    let mainText = '';
+                    let sub = '';
+                    
+                    if (type === 'station') {
+                        mainText = `${item.name}駅（${item.pref}）`;
+                        const railwayText = item.railways.map(r => r.railway).join(' / ');
+                        sub = `${item.railways[0].operator} / ${railwayText}`;
+                    } else {
+                        mainText = item.name;
+                        sub = item.pref;
+                    }
+                    
+                    const itemJson = JSON.stringify(item).replace(/'/g, "\\'");
+                    return `
+                        <div class="suggestion-item" onclick='${selectCallbackName}(${itemJson})'>
+                            <div class="suggestion-name">${mainText}</div>
+                            <div class="suggestion-sub">${sub}</div>
+                        </div>
+                    `;
+                }).join('');
+                container.classList.add('show');
+            } else {
+                container.classList.remove('show');
+            }
+        }
+
+        function selectFrom(item) {
+            selectedFrom = {
+                type: fromTabType,
+                id: fromTabType === 'station' ? item.id : undefined,
+                code: fromTabType === 'city' ? item.code : undefined,
+                name: item.name,
+                pref: fromTabType === 'station' ? item.pref : item.pref,
+                railways: fromTabType === 'station' ? item.railways : undefined,
+                cityCode: fromTabType === 'station' ? item.cityCode : undefined,
+                coordinates: item.coordinates
+            };
+            
+            document.getElementById('fromInput').value = item.name + (fromTabType === 'station' ? '駅' : '');
+            document.getElementById('fromSuggestions').classList.remove('show');
+            
+            const preview = document.getElementById('fromPreview');
+            preview.classList.add('show');
+            
+            if (fromTabType === 'station') {
+                document.getElementById('fromPreviewName').textContent = `${item.name}駅（${item.pref}）`;
+                const railwayText = item.railways.map(r => r.railway).join(' / ');
+                document.getElementById('fromPreviewSub').textContent = `${item.railways[0].operator} / ${railwayText}`;
+            } else {
+                document.getElementById('fromPreviewName').textContent = item.name;
+                document.getElementById('fromPreviewSub').textContent = item.pref;
+            }
+            
+            updateDistanceDisplay();
+            updateSubmitButton();
+        }
+
+        function selectTo(item) {
+            selectedTo = {
+                type: toTabType,
+                id: toTabType === 'station' ? item.id : undefined,
+                code: toTabType === 'city' ? item.code : undefined,
+                name: item.name,
+                pref: toTabType === 'station' ? item.pref : item.pref,
+                railways: toTabType === 'station' ? item.railways : undefined,
+                cityCode: toTabType === 'station' ? item.cityCode : undefined,
+                coordinates: item.coordinates
+            };
+            
+            document.getElementById('toInput').value = item.name + (toTabType === 'station' ? '駅' : '');
+            document.getElementById('toSuggestions').classList.remove('show');
+            
+            const preview = document.getElementById('toPreview');
+            preview.classList.add('show');
+            
+            if (toTabType === 'station') {
+                document.getElementById('toPreviewName').textContent = `${item.name}駅（${item.pref}）`;
+                const railwayText = item.railways.map(r => r.railway).join(' / ');
+                document.getElementById('toPreviewSub').textContent = `${item.railways[0].operator} / ${railwayText}`;
+            } else {
+                document.getElementById('toPreviewName').textContent = item.name;
+                document.getElementById('toPreviewSub').textContent = item.pref;
+            }
+            
+            updateDistanceDisplay();
+            updateSubmitButton();
+        }
+
+        function updateDistanceDisplay() {
+            if (selectedFrom && selectedTo) {
+                const distance = calculateDistance(selectedFrom, selectedTo);
+                document.getElementById('calculatedDistance').textContent = distance;
+                document.getElementById('distanceDisplay').style.display = 'block';
+            }
+        }
+
+        function updateSubmitButton() {
+            document.getElementById('submitBtn').disabled = !(selectedFrom && selectedTo);
+        }
+
+        function switchFromTab(type) {
+            fromTabType = type;
+            document.querySelectorAll('#addModal .tabs')[0].querySelectorAll('.tab').forEach((tab, i) => {
+                tab.classList.toggle('active', (type === 'station' && i === 0) || (type === 'city' && i === 1));
+            });
+            document.getElementById('fromInput').value = '';
+            document.getElementById('fromSuggestions').classList.remove('show');
+            document.getElementById('fromPreview').classList.remove('show');
+            selectedFrom = null;
+            updateSubmitButton();
+        }
+
+        function switchToTab(type) {
+            toTabType = type;
+            document.querySelectorAll('#addModal .tabs')[1].querySelectorAll('.tab').forEach((tab, i) => {
+                tab.classList.toggle('active', (type === 'station' && i === 0) || (type === 'city' && i === 1));
+            });
+            document.getElementById('toInput').value = '';
+            document.getElementById('toSuggestions').classList.remove('show');
+            document.getElementById('toPreview').classList.remove('show');
+            selectedTo = null;
+            updateSubmitButton();
+        }
+
+        // ========================================
+        // CRUD操作
+        // ========================================
+        function saveTrip() {
+            if (!selectedFrom || !selectedTo) return;
+            
+            const yearData = getYearData();
+            const distance = calculateDistance(selectedFrom, selectedTo);
+            const date = document.getElementById('tripDate').value;
+            const memo = document.getElementById('tripMemo').value.trim();
+            
+            const trip = {
+                id: `trip_${Date.now()}`,
+                date: new Date(date + 'T12:00:00+09:00').toISOString(),
+                from: selectedFrom,
+                to: selectedTo,
+                distance: distance,
+                memo: memo
+            };
+            
+            if (selectedFrom.type === 'station' && selectedTo.type === 'station') {
+                const commonRailways = selectedFrom.railways.filter(fromRailway =>
+                    selectedTo.railways.some(toRailway =>
+                        fromRailway.operator === toRailway.operator &&
+                        fromRailway.railway === toRailway.railway
+                    )
+                );
+                
+                console.log('🔍 共通路線チェック:', commonRailways);
+                
+                commonRailways.forEach(commonRailway => {
+                    const railway = railwayIndex.find(r =>
+                        r.operator === commonRailway.operator &&
+                        r.railway === commonRailway.railway
+                    );
+                    
+                    if (railway && railway.geometry) {
+                        const segment = extractSegment(
+                            selectedFrom.coordinates,
+                            selectedTo.coordinates,
+                            railway.geometry
+                        );
+                        
+                        if (segment) {
+                            const key = `${commonRailway.operator}_${commonRailway.railway}`;
+                            if (!data.usedSegments[key]) {
+                                data.usedSegments[key] = [];
+                            }
+                            data.usedSegments[key].push(segment);
+                            console.log('✅ 利用区間を記録:', key);
+                        }
+                    }
+                });
+            }
+            
+            yearData.trips.push(trip);
+            saveData();
+            updateUI();
+            closeAddModal();
+            
+            console.log('✅ 移動記録を保存:', trip);
+        }
+
+        function openDetailModal(tripId) {
+            const yearData = getYearData();
+            const trip = yearData.trips.find(t => t.id === tripId);
+            if (!trip) return;
+            
+            editingTripId = tripId;
+            
+            const date = new Date(trip.date);
+            const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+            
+            document.getElementById('editDate').value = dateStr;
+            document.getElementById('editMemo').value = trip.memo || '';
+            document.getElementById('detailModal').classList.add('show');
+        }
+
+        function updateTrip() {
+            const yearData = getYearData();
+            const trip = yearData.trips.find(t => t.id === editingTripId);
+            if (!trip) return;
+            
+            const newDate = document.getElementById('editDate').value;
+            trip.date = new Date(newDate + 'T12:00:00+09:00').toISOString();
+            trip.memo = document.getElementById('editMemo').value.trim();
+            
+            saveData();
+            updateUI();
+            closeDetailModal();
+        }
+
+        function deleteTrip() {
+            if (!confirm('この移動記録を削除しますか？')) return;
+            
+            const yearData = getYearData();
+            yearData.trips = yearData.trips.filter(t => t.id !== editingTripId);
+            
+            saveData();
+            updateUI();
+            closeDetailModal();
+        }
+
+        // ========================================
+        // モーダル操作
+        // ========================================
+        function openAddModal() {
+            selectedFrom = null;
+            selectedTo = null;
+            fromTabType = 'station';
+            toTabType = 'station';
+            
+            document.getElementById('fromInput').value = '';
+            document.getElementById('toInput').value = '';
+            document.getElementById('tripMemo').value = '';
+            document.getElementById('fromPreview').classList.remove('show');
+            document.getElementById('toPreview').classList.remove('show');
+            document.getElementById('distanceDisplay').style.display = 'none';
+            document.getElementById('submitBtn').disabled = true;
+            
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('tripDate').value = today;
+            document.getElementById('addModal').classList.add('show');
+        }
+
+        function closeAddModal() {
+            document.getElementById('addModal').classList.remove('show');
+        }
+
+        function closeDetailModal() {
+            document.getElementById('detailModal').classList.remove('show');
+            editingTripId = null;
+        }
+
+        // ========================================
+        // 年切り替え
+        // ========================================
+        function changeYear(delta) {
+            currentYear += delta;
+            ensureYearData(currentYear);
+            updateUI();
+        }
+
+        // ========================================
+        // 起動
+        // ========================================
+        window.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
