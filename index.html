@@ -790,8 +790,7 @@
                     }
                     
                     // 統合キー：都道府県_駅名（距離判定なし）
-                    const key = name;
-
+                    const key = `${pref}_${name}`;
                     
                     if (stationMap.has(key)) {
                         // 既存の駅に路線を追加（距離に関係なく統合）
