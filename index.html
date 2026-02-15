@@ -27,6 +27,9 @@
             position: sticky;
             top: 0;
             z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
         }
 
         .app-title {
@@ -39,6 +42,20 @@
             font-size: 10px;
             color: #999;
             margin-left: 8px;
+        }
+
+        .settings-btn {
+            width: 32px;
+            height: 32px;
+            border: none;
+            background: #f0f0f0;
+            border-radius: 50%;
+            font-size: 18px;
+            color: #666;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         #map {
@@ -471,6 +488,43 @@
             cursor: pointer;
             margin-top: 12px;
         }
+
+        .reset-btn {
+            width: 100%;
+            padding: 16px;
+            background: #FF9500;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 12px;
+        }
+
+        .settings-section {
+            margin-bottom: 24px;
+            padding-bottom: 24px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .settings-section:last-child {
+            border-bottom: none;
+        }
+
+        .settings-section-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #666;
+            margin-bottom: 12px;
+        }
+
+        .settings-description {
+            font-size: 13px;
+            color: #999;
+            margin-bottom: 12px;
+            line-height: 1.5;
+        }
     </style>
 </head>
 <body>
@@ -479,6 +533,7 @@
             LifeTrace
             <span class="version">v1.2</span>
         </div>
+        <button class="settings-btn" onclick="openSettingsModal()">⚙️</button>
     </div>
 
     <div id="map"></div>
@@ -601,53 +656,60 @@
         </div>
     </div>
 
+    <div id="settingsModal" class="modal">
+        <div class="modal-header">
+            <button class="modal-back" onclick="closeSettingsModal()">←</button>
+            <div class="modal-title">設定</div>
+        </div>
+        <div class="modal-body">
+            <div class="settings-section">
+                <div class="settings-section-title">データ管理</div>
+                <div class="settings-description">
+                    すべての移動記録と統計データを削除します。この操作は取り消せません。
+                </div>
+                <button class="reset-btn" onclick="resetAllData()">すべてのデータをリセット</button>
+            </div>
+            
+            <div class="settings-section">
+                <div class="settings-section-title">アプリ情報</div>
+                <div class="settings-description">
+                    LifeTrace v1.2<br>
+                    駅数: <span id="settingsStationCount">0</span>件<br>
+                    市区町村数: <span id="settingsCityCount">0</span>件<br>
+                    路線数: <span id="settingsRailwayCount">0</span>件
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
-        // ========================================
-        // グローバル変数
-        // ========================================
         const STORAGE_KEY = 'lifeTrace_v1_2';
         const EARTH_CIRCUMFERENCE = 40075;
 
         let currentYear = new Date().getFullYear();
         let data = { version: '1.2', years: {}, usedSegments: {} };
-        let map, cityLayer, stationLayer, railwayBaseLayer, railwayUsedLayer;
+        let map, cityLayer, stationLayer, railwayBaseLayer, railwayUsedLayer, previewLayer;
         let cityIndex = [], stationIndex = [], railwayIndex = [];
         let selectedFrom = null, selectedTo = null;
         let fromTabType = 'station', toTabType = 'station';
         let editingTripId = null;
 
-        // ========================================
-        // 初期化
-        // ========================================
         async function init() {
-            console.log('🚀 LifeTrace v1.2 起動');
             loadData();
             await Promise.all([loadCities(), loadStations(), loadRailways()]);
             initMap();
             setupInputs();
             updateUI();
-            
-            const today = new Date().toISOString().split('T')[0];
-            document.getElementById('tripDate').value = today;
-            
-            console.log('✅ 初期化完了');
-            console.log('📊 駅:', stationIndex.length, '件');
-            console.log('📊 市区町村:', cityIndex.length, '件');
-            console.log('📊 路線:', railwayIndex.length, '件');
+            document.getElementById('tripDate').value = new Date().toISOString().split('T')[0];
         }
 
-        // ========================================
-        // データ管理
-        // ========================================
         function loadData() {
             const stored = localStorage.getItem(STORAGE_KEY);
             if (stored) {
                 try {
                     data = JSON.parse(stored);
                     if (!data.usedSegments) data.usedSegments = {};
-                } catch (e) {
-                    console.error('データ読み込みエラー:', e);
-                }
+                } catch (e) {}
             }
             ensureYearData(currentYear);
         }
@@ -667,14 +729,22 @@
             return data.years[currentYear];
         }
 
-        // ========================================
-        // 市区町村データ読み込み（Polygon/MultiPolygon完全対応）
-        // ========================================
+        function resetAllData() {
+            if (!confirm('本当にすべてのデータを削除しますか？\nこの操作は取り消せません。')) return;
+            if (!confirm('最終確認：すべての移動記録が削除されます。よろしいですか？')) return;
+            
+            localStorage.removeItem(STORAGE_KEY);
+            data = { version: '1.2', years: {}, usedSegments: {} };
+            ensureYearData(currentYear);
+            updateUI();
+            closeSettingsModal();
+            alert('すべてのデータをリセットしました');
+        }
+
         async function loadCities() {
             try {
                 const response = await fetch('data/cities.geojson');
                 const geojson = await response.json();
-                
                 const seen = new Set();
                 
                 geojson.features.forEach(f => {
@@ -687,14 +757,10 @@
                     const city = f.properties.N03_004 || '';
                     
                     let name = '';
-                    if (city) {
-                        if (county && county.includes('市')) {
-                            name = `${county} ${city}`;
-                        } else {
-                            name = city;
-                        }
-                    } else if (county && county.includes('市')) {
-                        name = county;
+                    if (county && city) {
+                        name = `${county} ${city}`;
+                    } else if (!county && city) {
+                        name = city;
                     } else {
                         return;
                     }
@@ -708,59 +774,31 @@
                                 coords = [f.geometry.coordinates[0][0][0][1], f.geometry.coordinates[0][0][0][0]];
                             }
                         }
-                    } catch (e) {
-                        console.warn('座標取得失敗:', name, e);
-                    }
+                    } catch (e) {}
                     
-                    cityIndex.push({ 
-                        code, 
-                        name, 
-                        pref, 
-                        coordinates: coords, 
-                        geom: f 
-                    });
+                    cityIndex.push({ code, name, pref, coordinates: coords, geom: f });
                 });
-                
-                console.log('✅ 市区町村:', cityIndex.length, '件');
-            } catch (e) {
-                console.error('❌ 市区町村データエラー:', e);
-            }
+            } catch (e) {}
         }
 
-        // ========================================
-        // 駅データ読み込み（駅名＋都道府県で必ず統合、距離判定なし）
-        // ========================================
         async function loadStations() {
             try {
                 stationIndex = [];
-                
                 const response = await fetch('data/stations.geojson');
                 const geojson = await response.json();
-                
-                console.log('📥 駅GeoJSON:', geojson.features?.length || 0, '件');
-                
                 const stationMap = new Map();
                 
                 geojson.features.forEach(f => {
                     const props = f.properties;
-                    
-                    // 駅名取得・正規化
-                    const rawName = props.N02_005 || props.N02_005e || props.stationName || 
-                                   props.駅名 || props.name || props.NAME;
+                    const rawName = props.N02_005 || props.N02_005e || props.stationName || props.駅名 || props.name || props.NAME;
                     if (!rawName) return;
                     
-                    // (2), (3)などを削除
-                    const name = rawName.replace(/\s*\(\d+\)\s*/g, '').trim();
+                    const name = rawName.replace(/[（(]\d+[）)]/g, '').trim();
                     if (!name) return;
                     
-                    // 都道府県取得（N02_002）
-                    let pref = props.N02_002 || '';
-                    
-                    // 事業者・路線取得
                     const operator = props.N02_003 || '不明';
                     const railway = props.N02_004 || '不明';
                     
-                    // 座標取得（LineString/Point/MultiPoint対応）
                     let coords = null;
                     try {
                         if (f.geometry) {
@@ -777,41 +815,30 @@
                                 coords = [f.geometry.coordinates[0][1], f.geometry.coordinates[0][0]];
                             }
                         }
-                    } catch (e) {
-                        console.warn('駅座標取得失敗:', name, e);
-                    }
+                    } catch (e) {}
                     
                     if (!coords) return;
                     
-                    // 都道府県が不明な場合は最寄り市区町村から取得
+                    let pref = props.N02_002 || '';
                     if (!pref && cityIndex.length > 0) {
                         const nearestCity = findNearestCityFull(coords);
                         if (nearestCity) pref = nearestCity.pref;
                     }
+                    if (!pref) pref = '不明';
                     
-                    // 統合キー：都道府県_駅名（距離判定なし）
-                    const key = name;
+                    const key = `${pref}_${name}`;
                     
                     if (stationMap.has(key)) {
-                        // 既存の駅に路線を追加（距離に関係なく統合）
                         const existing = stationMap.get(key);
-                        
-                        // 重複路線チェック
-                        const isDuplicate = existing.railways.some(r => 
-                            r.operator === operator && r.railway === railway
-                        );
-                        
+                        const isDuplicate = existing.railways.some(r => r.operator === operator && r.railway === railway);
                         if (!isDuplicate) {
                             existing.railways.push({ operator, railway });
                         }
-                        
-                        // 座標の平均を取る
                         existing.coordsList.push(coords);
                         const avgLat = existing.coordsList.reduce((sum, c) => sum + c[0], 0) / existing.coordsList.length;
                         const avgLng = existing.coordsList.reduce((sum, c) => sum + c[1], 0) / existing.coordsList.length;
                         existing.coordinates = [avgLat, avgLng];
                     } else {
-                        // 新規駅として登録
                         stationMap.set(key, {
                             name,
                             pref,
@@ -822,15 +849,10 @@
                     }
                 });
                 
-                console.log('🔀 統合後:', stationMap.size, '件');
-                
-                // stationIndexに変換（IDは一意）
                 stationMap.forEach((station, key) => {
                     const id = `sta_${key}`.replace(/\s/g, '_');
                     const cityCode = findNearestCity(station.coordinates);
-                    
                     delete station.coordsList;
-                    
                     stationIndex.push({
                         id,
                         name: station.name,
@@ -840,54 +862,27 @@
                         coordinates: station.coordinates
                     });
                 });
-                
-                console.log('✅ 駅:', stationIndex.length, '件');
-                
-                const multiLine = stationIndex.filter(s => s.railways.length > 1);
-                if (multiLine.length > 0) {
-                    console.log('🔀 複数路線駅:', multiLine.length, '件');
-                }
-                
-            } catch (e) {
-                console.error('❌ 駅データエラー:', e);
-            }
+            } catch (e) {}
         }
 
-        // ========================================
-        // 路線データ読み込み（LineString/MultiLineString対応）
-        // ========================================
         async function loadRailways() {
             try {
                 const response = await fetch('data/railways.geojson');
                 const geojson = await response.json();
-                
                 const seen = new Set();
+                
                 geojson.features.forEach(f => {
                     const operator = f.properties.N02_003;
                     const railway = f.properties.N02_004;
-                    
                     if (!operator || !railway) return;
-                    
                     const key = `${operator}_${railway}`;
                     if (seen.has(key)) return;
                     seen.add(key);
-                    
-                    railwayIndex.push({
-                        operator,
-                        railway,
-                        geometry: f.geometry
-                    });
+                    railwayIndex.push({ operator, railway, geometry: f.geometry });
                 });
-                
-                console.log('✅ 路線:', railwayIndex.length, '件');
-            } catch (e) {
-                console.error('❌ 路線データエラー:', e);
-            }
+            } catch (e) {}
         }
 
-        // ========================================
-        // 最寄り市区町村検索
-        // ========================================
         function findNearestCity(coords) {
             let minDist = Infinity;
             let nearestCode = null;
@@ -914,16 +909,11 @@
             return nearestCity;
         }
 
-        // ========================================
-        // 距離計算（Haversine）
-        // ========================================
         function haversineDistance([lat1, lng1], [lat2, lng2]) {
             const R = 6371;
             const dLat = toRad(lat2 - lat1);
             const dLng = toRad(lng2 - lng1);
-            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
-                      Math.sin(dLng/2) * Math.sin(dLng/2);
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng/2) * Math.sin(dLng/2);
             const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
             return R * c;
         }
@@ -932,13 +922,9 @@
             return deg * (Math.PI / 180);
         }
 
-        // ========================================
-        // 路線区間抽出（MultiLineString対応）
-        // ========================================
         function findNearestPointOnLine(targetCoords, lineCoords) {
             let minDist = Infinity;
             let nearestIndex = 0;
-            
             lineCoords.forEach((point, index) => {
                 const pointLatLng = [point[1], point[0]];
                 const dist = haversineDistance(targetCoords, pointLatLng);
@@ -947,7 +933,6 @@
                     nearestIndex = index;
                 }
             });
-            
             return nearestIndex;
         }
 
@@ -964,7 +949,6 @@
                     const fromIndex = findNearestPointOnLine(fromCoords, line);
                     const toIndex = findNearestPointOnLine(toCoords, line);
                     const indexDiff = Math.abs(toIndex - fromIndex);
-                    
                     if (indexDiff < 5) return;
                     
                     const startIndex = Math.min(fromIndex, toIndex);
@@ -978,7 +962,6 @@
                     }
                     
                     if (distance < 3.0) return;
-                    
                     if (distance > maxSegmentDistance) {
                         maxSegmentDistance = distance;
                         bestLineCoords = line;
@@ -996,13 +979,11 @@
             const startIndex = Math.min(fromIndex, toIndex);
             const endIndex = Math.max(fromIndex, toIndex);
             const segment = lineCoords.slice(startIndex, endIndex + 1);
-            
             return segment.map(point => [point[1], point[0]]);
         }
 
         function calculateSegmentDistance(segment) {
             if (!segment || segment.length < 2) return 0;
-            
             let totalDistance = 0;
             for (let i = 0; i < segment.length - 1; i++) {
                 totalDistance += haversineDistance(segment[i], segment[i + 1]);
@@ -1010,24 +991,15 @@
             return totalDistance;
         }
 
-        // ========================================
-        // 移動距離計算（実キロ or 直線）
-        // ========================================
         function calculateDistance(from, to) {
             if (from.type === 'station' && to.type === 'station' && from.railways && to.railways) {
                 const commonRailways = from.railways.filter(fromRailway =>
-                    to.railways.some(toRailway =>
-                        fromRailway.operator === toRailway.operator &&
-                        fromRailway.railway === toRailway.railway
-                    )
+                    to.railways.some(toRailway => fromRailway.operator === toRailway.operator && fromRailway.railway === toRailway.railway)
                 );
                 
                 if (commonRailways.length > 0) {
                     const commonRailway = commonRailways[0];
-                    const railway = railwayIndex.find(r =>
-                        r.operator === commonRailway.operator &&
-                        r.railway === commonRailway.railway
-                    );
+                    const railway = railwayIndex.find(r => r.operator === commonRailway.operator && r.railway === commonRailway.railway);
                     
                     if (railway && railway.geometry) {
                         const segment = extractSegment(from.coordinates, to.coordinates, railway.geometry);
@@ -1043,12 +1015,39 @@
             return Math.round(direct * 10) / 10;
         }
 
-        // ========================================
-        // 地図初期化・描画
-        // ========================================
+        function updateRoutePreview() {
+            if (previewLayer) {
+                previewLayer.clearLayers();
+            }
+            
+            if (selectedFrom && selectedTo) {
+                if (selectedFrom.type === 'station' && selectedTo.type === 'station' && selectedFrom.railways && selectedTo.railways) {
+                    const commonRailways = selectedFrom.railways.filter(fromRailway =>
+                        selectedTo.railways.some(toRailway => fromRailway.operator === toRailway.operator && fromRailway.railway === toRailway.railway)
+                    );
+                    
+                    if (commonRailways.length > 0) {
+                        const commonRailway = commonRailways[0];
+                        const railway = railwayIndex.find(r => r.operator === commonRailway.operator && r.railway === commonRailway.railway);
+                        
+                        if (railway && railway.geometry) {
+                            const segment = extractSegment(selectedFrom.coordinates, selectedTo.coordinates, railway.geometry);
+                            if (segment && segment.length >= 2) {
+                                L.polyline(segment, {
+                                    color: '#FF3B30',
+                                    weight: 4,
+                                    opacity: 0.8,
+                                    dashArray: '10, 5'
+                                }).addTo(previewLayer);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         function initMap() {
             map = L.map('map', { zoomControl: true, preferCanvas: true }).setView([36.0, 138.0], 6);
-            
             L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
                 attribution: '© OpenStreetMap, © CartoDB'
             }).addTo(map);
@@ -1057,7 +1056,7 @@
             railwayUsedLayer = L.layerGroup().addTo(map);
             cityLayer = L.layerGroup().addTo(map);
             stationLayer = L.layerGroup().addTo(map);
-            
+            previewLayer = L.layerGroup().addTo(map);
             renderMap();
         }
 
@@ -1069,22 +1068,14 @@
             
             railwayIndex.forEach(railway => {
                 if (railway.geometry) {
-                    L.geoJSON(railway.geometry, {
-                        style: { color: '#ccc', weight: 1, opacity: 0.5 }
-                    }).addTo(railwayBaseLayer);
+                    L.geoJSON(railway.geometry, { style: { color: '#ccc', weight: 1, opacity: 0.5 } }).addTo(railwayBaseLayer);
                 }
             });
             
             Object.keys(data.usedSegments).forEach(key => {
                 const segments = data.usedSegments[key];
-                const color = '#007AFF';
-                
                 segments.forEach(segment => {
-                    L.polyline(segment, {
-                        color: color,
-                        weight: 3,
-                        opacity: 0.9
-                    }).addTo(railwayUsedLayer);
+                    L.polyline(segment, { color: '#007AFF', weight: 3, opacity: 0.9 }).addTo(railwayUsedLayer);
                 });
             });
             
@@ -1104,29 +1095,18 @@
                 if (station) {
                     const count = stats.stationVisitCount[id] || 1;
                     const radius = 4 + Math.log(count + 1) * 2;
-                    
-                    const railwayList = station.railways.map(r => 
-                        `${r.operator}<br>${r.railway}`
-                    ).join('<br>');
-                    
+                    const railwayList = station.railways.map(r => `${r.operator}<br>${r.railway}`).join('<br>');
                     L.circleMarker(station.coordinates, {
                         radius: radius,
                         fillColor: '#FF9500',
                         color: '#fff',
                         weight: 2,
                         fillOpacity: 0.8
-                    }).bindPopup(`
-                        <strong>${station.name}駅（${station.pref}）</strong><br>
-                        ${railwayList}<br>
-                        訪問: ${count}回
-                    `).addTo(stationLayer);
+                    }).bindPopup(`<strong>${station.name}駅（${station.pref}）</strong><br>${railwayList}<br>訪問: ${count}回`).addTo(stationLayer);
                 }
             });
         }
 
-        // ========================================
-        // 統計計算
-        // ========================================
         function deriveStats() {
             const yearData = getYearData();
             const cities = new Set();
@@ -1164,9 +1144,6 @@
             };
         }
 
-        // ========================================
-        // UI更新
-        // ========================================
         function updateUI() {
             document.getElementById('yearDisplay').textContent = currentYear;
             const stats = deriveStats();
@@ -1194,23 +1171,17 @@
             }
             
             const sorted = [...yearData.trips].sort((a, b) => new Date(b.date) - new Date(a.date));
-            
             container.innerHTML = sorted.map(trip => {
                 const date = new Date(trip.date);
                 const dateStr = `${date.getMonth() + 1}/${date.getDate()}`;
-                return `
-                    <div class="trip-card" onclick="openDetailModal('${trip.id}')">
-                        <div class="trip-route">${trip.from.name} → ${trip.to.name}</div>
-                        <div class="trip-date-distance">${dateStr} • ${trip.distance}km</div>
-                        ${trip.memo ? `<div class="trip-memo">${trip.memo}</div>` : ''}
-                    </div>
-                `;
+                return `<div class="trip-card" onclick="openDetailModal('${trip.id}')">
+                    <div class="trip-route">${trip.from.name} → ${trip.to.name}</div>
+                    <div class="trip-date-distance">${dateStr} • ${trip.distance}km</div>
+                    ${trip.memo ? `<div class="trip-memo">${trip.memo}</div>` : ''}
+                </div>`;
             }).join('');
         }
 
-        // ========================================
-        // 検索・サジェスト
-        // ========================================
         function setupInputs() {
             document.getElementById('fromInput').addEventListener('input', (e) => {
                 handleSearch(e.target.value, fromTabType, 'fromSuggestions', 'selectFrom');
@@ -1231,21 +1202,17 @@
             
             const index = type === 'station' ? stationIndex : cityIndex;
             const qLower = q.toLowerCase();
-            
             let results = index.filter(item => item.name.toLowerCase().includes(qLower));
             
             results.sort((a, b) => {
                 const aNameLower = a.name.toLowerCase();
                 const bNameLower = b.name.toLowerCase();
-                
                 const aExact = aNameLower === qLower ? 0 : 1;
                 const bExact = bNameLower === qLower ? 0 : 1;
                 if (aExact !== bExact) return aExact - bExact;
-                
                 const aStarts = aNameLower.startsWith(qLower) ? 0 : 1;
                 const bStarts = bNameLower.startsWith(qLower) ? 0 : 1;
                 if (aStarts !== bStarts) return aStarts - bStarts;
-                
                 return aNameLower.localeCompare(bNameLower);
             });
             
@@ -1255,7 +1222,6 @@
                 container.innerHTML = results.map(item => {
                     let mainText = '';
                     let sub = '';
-                    
                     if (type === 'station') {
                         mainText = `${item.name}駅（${item.pref}）`;
                         const railwayText = item.railways.map(r => r.railway).join(' / ');
@@ -1264,14 +1230,11 @@
                         mainText = item.name;
                         sub = item.pref;
                     }
-                    
                     const itemJson = JSON.stringify(item).replace(/'/g, "\\'");
-                    return `
-                        <div class="suggestion-item" onclick='${selectCallbackName}(${itemJson})'>
-                            <div class="suggestion-name">${mainText}</div>
-                            <div class="suggestion-sub">${sub}</div>
-                        </div>
-                    `;
+                    return `<div class="suggestion-item" onclick='${selectCallbackName}(${itemJson})'>
+                        <div class="suggestion-name">${mainText}</div>
+                        <div class="suggestion-sub">${sub}</div>
+                    </div>`;
                 }).join('');
                 container.classList.add('show');
             } else {
@@ -1306,6 +1269,7 @@
                 document.getElementById('fromPreviewSub').textContent = item.pref;
             }
             
+            updateRoutePreview();
             updateDistanceDisplay();
             updateSubmitButton();
         }
@@ -1337,6 +1301,7 @@
                 document.getElementById('toPreviewSub').textContent = item.pref;
             }
             
+            updateRoutePreview();
             updateDistanceDisplay();
             updateSubmitButton();
         }
@@ -1362,6 +1327,7 @@
             document.getElementById('fromSuggestions').classList.remove('show');
             document.getElementById('fromPreview').classList.remove('show');
             selectedFrom = null;
+            if (previewLayer) previewLayer.clearLayers();
             updateSubmitButton();
         }
 
@@ -1374,12 +1340,10 @@
             document.getElementById('toSuggestions').classList.remove('show');
             document.getElementById('toPreview').classList.remove('show');
             selectedTo = null;
+            if (previewLayer) previewLayer.clearLayers();
             updateSubmitButton();
         }
 
-        // ========================================
-        // CRUD操作
-        // ========================================
         function saveTrip() {
             if (!selectedFrom || !selectedTo) return;
             
@@ -1399,30 +1363,16 @@
             
             if (selectedFrom.type === 'station' && selectedTo.type === 'station') {
                 const commonRailways = selectedFrom.railways.filter(fromRailway =>
-                    selectedTo.railways.some(toRailway =>
-                        fromRailway.operator === toRailway.operator &&
-                        fromRailway.railway === toRailway.railway
-                    )
+                    selectedTo.railways.some(toRailway => fromRailway.operator === toRailway.operator && fromRailway.railway === toRailway.railway)
                 );
                 
                 commonRailways.forEach(commonRailway => {
-                    const railway = railwayIndex.find(r =>
-                        r.operator === commonRailway.operator &&
-                        r.railway === commonRailway.railway
-                    );
-                    
+                    const railway = railwayIndex.find(r => r.operator === commonRailway.operator && r.railway === commonRailway.railway);
                     if (railway && railway.geometry) {
-                        const segment = extractSegment(
-                            selectedFrom.coordinates,
-                            selectedTo.coordinates,
-                            railway.geometry
-                        );
-                        
+                        const segment = extractSegment(selectedFrom.coordinates, selectedTo.coordinates, railway.geometry);
                         if (segment) {
                             const key = `${commonRailway.operator}_${commonRailway.railway}`;
-                            if (!data.usedSegments[key]) {
-                                data.usedSegments[key] = [];
-                            }
+                            if (!data.usedSegments[key]) data.usedSegments[key] = [];
                             data.usedSegments[key].push(segment);
                         }
                     }
@@ -1441,10 +1391,8 @@
             if (!trip) return;
             
             editingTripId = tripId;
-            
             const date = new Date(trip.date);
             const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-            
             document.getElementById('editDate').value = dateStr;
             document.getElementById('editMemo').value = trip.memo || '';
             document.getElementById('detailModal').classList.add('show');
@@ -1458,7 +1406,6 @@
             const newDate = document.getElementById('editDate').value;
             trip.date = new Date(newDate + 'T12:00:00+09:00').toISOString();
             trip.memo = document.getElementById('editMemo').value.trim();
-            
             saveData();
             updateUI();
             closeDetailModal();
@@ -1466,24 +1413,18 @@
 
         function deleteTrip() {
             if (!confirm('この移動記録を削除しますか？')) return;
-            
             const yearData = getYearData();
             yearData.trips = yearData.trips.filter(t => t.id !== editingTripId);
-            
             saveData();
             updateUI();
             closeDetailModal();
         }
 
-        // ========================================
-        // モーダル操作
-        // ========================================
         function openAddModal() {
             selectedFrom = null;
             selectedTo = null;
             fromTabType = 'station';
             toTabType = 'station';
-            
             document.getElementById('fromInput').value = '';
             document.getElementById('toInput').value = '';
             document.getElementById('tripMemo').value = '';
@@ -1491,14 +1432,14 @@
             document.getElementById('toPreview').classList.remove('show');
             document.getElementById('distanceDisplay').style.display = 'none';
             document.getElementById('submitBtn').disabled = true;
-            
-            const today = new Date().toISOString().split('T')[0];
-            document.getElementById('tripDate').value = today;
+            document.getElementById('tripDate').value = new Date().toISOString().split('T')[0];
+            if (previewLayer) previewLayer.clearLayers();
             document.getElementById('addModal').classList.add('show');
         }
 
         function closeAddModal() {
             document.getElementById('addModal').classList.remove('show');
+            if (previewLayer) previewLayer.clearLayers();
         }
 
         function closeDetailModal() {
@@ -1506,18 +1447,23 @@
             editingTripId = null;
         }
 
-        // ========================================
-        // 年切り替え
-        // ========================================
+        function openSettingsModal() {
+            document.getElementById('settingsStationCount').textContent = stationIndex.length;
+            document.getElementById('settingsCityCount').textContent = cityIndex.length;
+            document.getElementById('settingsRailwayCount').textContent = railwayIndex.length;
+            document.getElementById('settingsModal').classList.add('show');
+        }
+
+        function closeSettingsModal() {
+            document.getElementById('settingsModal').classList.remove('show');
+        }
+
         function changeYear(delta) {
             currentYear += delta;
             ensureYearData(currentYear);
             updateUI();
         }
 
-        // ========================================
-        // 起動
-        // ========================================
         window.addEventListener('DOMContentLoaded', init);
     </script>
 </body>
