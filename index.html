@@ -744,7 +744,8 @@
         async function loadCities() {
             try {
                 const response = await fetch('data/cities.geojson');
-                const geojson = await response.json();
+                const buf = await response.arrayBuffer();
+                const geojson = JSON.parse(new TextDecoder('utf-8').decode(buf));
                 const seen = new Set();
                 
                 geojson.features.forEach(f => {
@@ -785,7 +786,8 @@
             try {
                 stationIndex = [];
                 const response = await fetch('data/stations.geojson');
-                const geojson = await response.json();
+                const buf = await response.arrayBuffer();
+                const geojson = JSON.parse(new TextDecoder('utf-8').decode(buf));
                 const stationMap = new Map();
                 
                 geojson.features.forEach(f => {
@@ -868,7 +870,8 @@
         async function loadRailways() {
             try {
                 const response = await fetch('data/railways.geojson');
-                const geojson = await response.json();
+                const buf = await response.arrayBuffer();
+                const geojson = JSON.parse(new TextDecoder('utf-8').decode(buf));
                 const seen = new Set();
                 
                 geojson.features.forEach(f => {
