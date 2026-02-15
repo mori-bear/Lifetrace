@@ -696,7 +696,8 @@
 
         async function init() {
             loadData();
-            await Promise.all([loadCities(), loadStations(), loadRailways()]);
+            await loadCities();
+            await Promise.all([loadStations(), loadRailways()]);
             initMap();
             setupInputs();
             updateUI();
@@ -820,15 +821,10 @@
                     } catch (e) {}
                     
                     if (!coords) return;
-                    
-                    let pref = props.N02_002 || '';
-                    if (!pref && cityIndex.length > 0) {
-                        const nearestCity = findNearestCityFull(coords);
-                        if (nearestCity) pref = nearestCity.pref;
-                    }
-                    if (!pref) pref = '不明';
-                    
-                    const key = `${pref}_${name}`;
+
+                    const roundedLat = Math.round(coords[0] * 10);
+                    const roundedLng = Math.round(coords[1] * 10);
+                    const key = `${name}_${roundedLat}_${roundedLng}`;
                     
                     if (stationMap.has(key)) {
                         const existing = stationMap.get(key);
@@ -843,7 +839,6 @@
                     } else {
                         stationMap.set(key, {
                             name,
-                            pref,
                             railways: [{ operator, railway }],
                             coordinates: coords,
                             coordsList: [coords]
@@ -852,13 +847,18 @@
                 });
                 
                 stationMap.forEach((station, key) => {
-                    const id = `sta_${key}`.replace(/\s/g, '_');
+                    let pref = '不明';
+                    if (cityIndex.length > 0) {
+                        const nearestCity = findNearestCityFull(station.coordinates);
+                        if (nearestCity) pref = nearestCity.pref;
+                    }
+                    const id = `sta_${pref}_${station.name}`.replace(/\s/g, '_');
                     const cityCode = findNearestCity(station.coordinates);
                     delete station.coordsList;
                     stationIndex.push({
                         id,
                         name: station.name,
-                        pref: station.pref,
+                        pref,
                         railways: station.railways,
                         cityCode,
                         coordinates: station.coordinates
