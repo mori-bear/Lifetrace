@@ -6,6 +6,7 @@
     <title>LifeTrace v1.2 - 移動の軌跡</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -885,16 +886,33 @@
                 const response = await fetch('data/railways.geojson');
                 const buf = await response.arrayBuffer();
                 const geojson = JSON.parse(new TextDecoder('utf-8').decode(buf));
-                const seen = new Set();
-                
+                const railwayMap = new Map();
+
                 geojson.features.forEach(f => {
                     const operator = f.properties.N02_003;
                     const railway = f.properties.N02_004;
                     if (!operator || !railway) return;
                     const key = `${operator}_${railway}`;
-                    if (seen.has(key)) return;
-                    seen.add(key);
-                    railwayIndex.push({ operator, railway, geometry: f.geometry });
+
+                    if (!railwayMap.has(key)) {
+                        railwayMap.set(key, { operator, railway, allLines: [] });
+                    }
+
+                    const entry = railwayMap.get(key);
+                    if (f.geometry.type === 'LineString') {
+                        entry.allLines.push(f.geometry.coordinates);
+                    } else if (f.geometry.type === 'MultiLineString') {
+                        f.geometry.coordinates.forEach(line => entry.allLines.push(line));
+                    }
+                });
+
+                railwayMap.forEach(value => {
+                    const merged = mergeLineStrings(value.allLines);
+                    railwayIndex.push({
+                        operator: value.operator,
+                        railway: value.railway,
+                        lines: merged
+                    });
                 });
             } catch (e) {}
         }
@@ -938,64 +956,88 @@
             return deg * (Math.PI / 180);
         }
 
-        function findNearestPointOnLine(targetCoords, lineCoords) {
-            let minDist = Infinity;
-            let nearestIndex = 0;
-            lineCoords.forEach((point, index) => {
-                const pointLatLng = [point[1], point[0]];
-                const dist = haversineDistance(targetCoords, pointLatLng);
-                if (dist < minDist) {
-                    minDist = dist;
-                    nearestIndex = index;
-                }
-            });
-            return nearestIndex;
+        function pointsClose(p1, p2, tolerance) {
+            return Math.abs(p1[0] - p2[0]) < tolerance && Math.abs(p1[1] - p2[1]) < tolerance;
         }
 
-        function extractSegment(fromCoords, toCoords, railwayGeom) {
-            let lineCoords = [];
-            
-            if (railwayGeom.type === 'LineString') {
-                lineCoords = railwayGeom.coordinates;
-            } else if (railwayGeom.type === 'MultiLineString') {
-                let maxSegmentDistance = 0;
-                let bestLineCoords = null;
-                
-                railwayGeom.coordinates.forEach(line => {
-                    const fromIndex = findNearestPointOnLine(fromCoords, line);
-                    const toIndex = findNearestPointOnLine(toCoords, line);
-                    const indexDiff = Math.abs(toIndex - fromIndex);
-                    if (indexDiff < 5) return;
-                    
-                    const startIndex = Math.min(fromIndex, toIndex);
-                    const endIndex = Math.max(fromIndex, toIndex);
-                    const segment = line.slice(startIndex, endIndex + 1);
-                    const segmentLatLng = segment.map(point => [point[1], point[0]]);
-                    
-                    let distance = 0;
-                    for (let i = 0; i < segmentLatLng.length - 1; i++) {
-                        distance += haversineDistance(segmentLatLng[i], segmentLatLng[i + 1]);
+        function mergeLineStrings(lines) {
+            if (lines.length <= 1) return lines;
+
+            const TOLERANCE = 0.0003;
+            const remaining = lines.map(l => l.slice());
+            const merged = [];
+
+            while (remaining.length > 0) {
+                let current = remaining.shift();
+                let changed = true;
+
+                while (changed) {
+                    changed = false;
+                    for (let i = 0; i < remaining.length; i++) {
+                        const other = remaining[i];
+                        const curStart = current[0];
+                        const curEnd = current[current.length - 1];
+                        const otherStart = other[0];
+                        const otherEnd = other[other.length - 1];
+
+                        if (pointsClose(curEnd, otherStart, TOLERANCE)) {
+                            current = current.concat(other.slice(1));
+                            remaining.splice(i, 1);
+                            changed = true;
+                            break;
+                        } else if (pointsClose(curEnd, otherEnd, TOLERANCE)) {
+                            current = current.concat([...other].reverse().slice(1));
+                            remaining.splice(i, 1);
+                            changed = true;
+                            break;
+                        } else if (pointsClose(curStart, otherEnd, TOLERANCE)) {
+                            current = other.concat(current.slice(1));
+                            remaining.splice(i, 1);
+                            changed = true;
+                            break;
+                        } else if (pointsClose(curStart, otherStart, TOLERANCE)) {
+                            current = [...other].reverse().concat(current.slice(1));
+                            remaining.splice(i, 1);
+                            changed = true;
+                            break;
+                        }
                     }
-                    
-                    if (distance < 3.0) return;
-                    if (distance > maxSegmentDistance) {
-                        maxSegmentDistance = distance;
-                        bestLineCoords = line;
-                    }
-                });
-                
-                if (!bestLineCoords) return null;
-                lineCoords = bestLineCoords;
-            } else {
-                return null;
+                }
+
+                merged.push(current);
             }
-            
-            const fromIndex = findNearestPointOnLine(fromCoords, lineCoords);
-            const toIndex = findNearestPointOnLine(toCoords, lineCoords);
-            const startIndex = Math.min(fromIndex, toIndex);
-            const endIndex = Math.max(fromIndex, toIndex);
-            const segment = lineCoords.slice(startIndex, endIndex + 1);
-            return segment.map(point => [point[1], point[0]]);
+
+            return merged;
+        }
+
+        function extractSegment(fromCoords, toCoords, railwayLines) {
+            let bestSegment = null;
+            let bestScore = Infinity;
+
+            for (const lineCoords of railwayLines) {
+                if (lineCoords.length < 2) continue;
+
+                try {
+                    const line = turf.lineString(lineCoords);
+                    const fromPoint = turf.point([fromCoords[1], fromCoords[0]]);
+                    const toPoint = turf.point([toCoords[1], toCoords[0]]);
+
+                    const nearestFrom = turf.nearestPointOnLine(line, fromPoint, { units: 'kilometers' });
+                    const nearestTo = turf.nearestPointOnLine(line, toPoint, { units: 'kilometers' });
+
+                    const score = nearestFrom.properties.dist + nearestTo.properties.dist;
+
+                    if (score < bestScore) {
+                        bestScore = score;
+                        const sliced = turf.lineSlice(nearestFrom, nearestTo, line);
+                        bestSegment = sliced.geometry.coordinates.map(c => [c[1], c[0]]);
+                    }
+                } catch (e) {
+                    continue;
+                }
+            }
+
+            return bestSegment;
         }
 
         function calculateSegmentDistance(segment) {
@@ -1017,8 +1059,8 @@
                     const commonRailway = commonRailways[0];
                     const railway = railwayIndex.find(r => r.operator === commonRailway.operator && r.railway === commonRailway.railway);
                     
-                    if (railway && railway.geometry) {
-                        const segment = extractSegment(from.coordinates, to.coordinates, railway.geometry);
+                    if (railway && railway.lines) {
+                        const segment = extractSegment(from.coordinates, to.coordinates, railway.lines);
                         if (segment && segment.length >= 2) {
                             const actualDistance = calculateSegmentDistance(segment);
                             return Math.round(actualDistance * 10) / 10;
@@ -1026,7 +1068,7 @@
                     }
                 }
             }
-            
+
             const direct = haversineDistance(from.coordinates, to.coordinates);
             return Math.round(direct * 10) / 10;
         }
@@ -1046,8 +1088,8 @@
                         const commonRailway = commonRailways[0];
                         const railway = railwayIndex.find(r => r.operator === commonRailway.operator && r.railway === commonRailway.railway);
                         
-                        if (railway && railway.geometry) {
-                            const segment = extractSegment(selectedFrom.coordinates, selectedTo.coordinates, railway.geometry);
+                        if (railway && railway.lines) {
+                            const segment = extractSegment(selectedFrom.coordinates, selectedTo.coordinates, railway.lines);
                             if (segment && segment.length >= 2) {
                                 L.polyline(segment, {
                                     color: '#FF3B30',
@@ -1083,8 +1125,11 @@
             stationLayer.clearLayers();
             
             railwayIndex.forEach(railway => {
-                if (railway.geometry) {
-                    L.geoJSON(railway.geometry, { style: { color: '#ccc', weight: 1, opacity: 0.5 } }).addTo(railwayBaseLayer);
+                if (railway.lines) {
+                    railway.lines.forEach(line => {
+                        const latLngs = line.map(c => [c[1], c[0]]);
+                        L.polyline(latLngs, { color: '#ccc', weight: 1, opacity: 0.5 }).addTo(railwayBaseLayer);
+                    });
                 }
             });
             
@@ -1387,8 +1432,8 @@
                 
                 commonRailways.forEach(commonRailway => {
                     const railway = railwayIndex.find(r => r.operator === commonRailway.operator && r.railway === commonRailway.railway);
-                    if (railway && railway.geometry) {
-                        const segment = extractSegment(selectedFrom.coordinates, selectedTo.coordinates, railway.geometry);
+                    if (railway && railway.lines) {
+                        const segment = extractSegment(selectedFrom.coordinates, selectedTo.coordinates, railway.lines);
                         if (segment) {
                             const key = `${commonRailway.operator}_${commonRailway.railway}`;
                             if (!data.usedSegments[key]) data.usedSegments[key] = [];
