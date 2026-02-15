@@ -1240,8 +1240,9 @@
                     let sub = '';
                     if (type === 'station') {
                         mainText = `${item.name}駅（${item.pref}）`;
-                        const railwayText = item.railways.map(r => r.railway).join(' / ');
-                        sub = `${item.railways[0].operator} / ${railwayText}`;
+                        const companies = [...new Set(item.railways.map(r => r.railway))].join('・');
+                        const lines = item.railways.map(r => r.operator).join('・');
+                        sub = `${companies} / ${lines}`;
                     } else {
                         mainText = item.name;
                         sub = item.pref;
@@ -1278,8 +1279,9 @@
             
             if (fromTabType === 'station') {
                 document.getElementById('fromPreviewName').textContent = `${item.name}駅（${item.pref}）`;
-                const railwayText = item.railways.map(r => r.railway).join(' / ');
-                document.getElementById('fromPreviewSub').textContent = `${item.railways[0].operator} / ${railwayText}`;
+                const fromCompanies = [...new Set(item.railways.map(r => r.railway))].join('・');
+                const fromLines = item.railways.map(r => r.operator).join('・');
+                document.getElementById('fromPreviewSub').textContent = `${fromCompanies} / ${fromLines}`;
             } else {
                 document.getElementById('fromPreviewName').textContent = item.name;
                 document.getElementById('fromPreviewSub').textContent = item.pref;
@@ -1310,8 +1312,9 @@
             
             if (toTabType === 'station') {
                 document.getElementById('toPreviewName').textContent = `${item.name}駅（${item.pref}）`;
-                const railwayText = item.railways.map(r => r.railway).join(' / ');
-                document.getElementById('toPreviewSub').textContent = `${item.railways[0].operator} / ${railwayText}`;
+                const toCompanies = [...new Set(item.railways.map(r => r.railway))].join('・');
+                const toLines = item.railways.map(r => r.operator).join('・');
+                document.getElementById('toPreviewSub').textContent = `${toCompanies} / ${toLines}`;
             } else {
                 document.getElementById('toPreviewName').textContent = item.name;
                 document.getElementById('toPreviewSub').textContent = item.pref;
