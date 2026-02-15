@@ -954,42 +954,35 @@
 
         function extractSegment(fromCoords, toCoords, railwayGeom) {
             let lineCoords = [];
-            
+
             if (railwayGeom.type === 'LineString') {
                 lineCoords = railwayGeom.coordinates;
             } else if (railwayGeom.type === 'MultiLineString') {
-                let maxSegmentDistance = 0;
+                // 両駅に最も近いセグメントを選択（合計距離が最小のもの）
+                let bestScore = Infinity;
                 let bestLineCoords = null;
-                
+
                 railwayGeom.coordinates.forEach(line => {
                     const fromIndex = findNearestPointOnLine(fromCoords, line);
                     const toIndex = findNearestPointOnLine(toCoords, line);
-                    const indexDiff = Math.abs(toIndex - fromIndex);
-                    if (indexDiff < 5) return;
-                    
-                    const startIndex = Math.min(fromIndex, toIndex);
-                    const endIndex = Math.max(fromIndex, toIndex);
-                    const segment = line.slice(startIndex, endIndex + 1);
-                    const segmentLatLng = segment.map(point => [point[1], point[0]]);
-                    
-                    let distance = 0;
-                    for (let i = 0; i < segmentLatLng.length - 1; i++) {
-                        distance += haversineDistance(segmentLatLng[i], segmentLatLng[i + 1]);
-                    }
-                    
-                    if (distance < 3.0) return;
-                    if (distance > maxSegmentDistance) {
-                        maxSegmentDistance = distance;
+                    const fromPoint = [line[fromIndex][1], line[fromIndex][0]];
+                    const toPoint = [line[toIndex][1], line[toIndex][0]];
+                    const fromDist = haversineDistance(fromCoords, fromPoint);
+                    const toDist = haversineDistance(toCoords, toPoint);
+                    const score = fromDist + toDist;
+
+                    if (score < bestScore) {
+                        bestScore = score;
                         bestLineCoords = line;
                     }
                 });
-                
+
                 if (!bestLineCoords) return null;
                 lineCoords = bestLineCoords;
             } else {
                 return null;
             }
-            
+
             const fromIndex = findNearestPointOnLine(fromCoords, lineCoords);
             const toIndex = findNearestPointOnLine(toCoords, lineCoords);
             const startIndex = Math.min(fromIndex, toIndex);
