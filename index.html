@@ -696,7 +696,8 @@
 
         async function init() {
             loadData();
-            await Promise.all([loadCities(), loadStations(), loadRailways()]);
+            await loadCities();
+            await Promise.all([loadStations(), loadRailways()]);
             initMap();
             setupInputs();
             updateUI();
@@ -741,18 +742,32 @@
             alert('すべてのデータをリセットしました');
         }
 
+        const PREF_NAMES = {
+            '01':'北海道','02':'青森県','03':'岩手県','04':'宮城県','05':'秋田県',
+            '06':'山形県','07':'福島県','08':'茨城県','09':'栃木県','10':'群馬県',
+            '11':'埼玉県','12':'千葉県','13':'東京都','14':'神奈川県','15':'新潟県',
+            '16':'富山県','17':'石川県','18':'福井県','19':'山梨県','20':'長野県',
+            '21':'岐阜県','22':'静岡県','23':'愛知県','24':'三重県','25':'滋賀県',
+            '26':'京都府','27':'大阪府','28':'兵庫県','29':'奈良県','30':'和歌山県',
+            '31':'鳥取県','32':'島根県','33':'岡山県','34':'広島県','35':'山口県',
+            '36':'徳島県','37':'香川県','38':'愛媛県','39':'高知県','40':'福岡県',
+            '41':'佐賀県','42':'長崎県','43':'熊本県','44':'大分県','45':'宮崎県',
+            '46':'鹿児島県','47':'沖縄県'
+        };
+
         async function loadCities() {
             try {
                 const response = await fetch('data/cities.geojson');
-                const geojson = await response.json();
+                const buf = await response.arrayBuffer();
+                const geojson = JSON.parse(new TextDecoder('utf-8').decode(buf));
                 const seen = new Set();
-                
+
                 geojson.features.forEach(f => {
                     const code = f.properties.N03_007;
                     if (!code || seen.has(code)) return;
                     seen.add(code);
-                    
-                    const pref = f.properties.N03_001 || '';
+
+                    const pref = PREF_NAMES[code.substring(0, 2)] || '';
                     const county = f.properties.N03_003 || '';
                     const city = f.properties.N03_004 || '';
                     
@@ -785,7 +800,8 @@
             try {
                 stationIndex = [];
                 const response = await fetch('data/stations.geojson');
-                const geojson = await response.json();
+                const buf = await response.arrayBuffer();
+                const geojson = JSON.parse(new TextDecoder('utf-8').decode(buf));
                 const stationMap = new Map();
                 
                 geojson.features.forEach(f => {
@@ -818,15 +834,10 @@
                     } catch (e) {}
                     
                     if (!coords) return;
-                    
-                    let pref = props.N02_002 || '';
-                    if (!pref && cityIndex.length > 0) {
-                        const nearestCity = findNearestCityFull(coords);
-                        if (nearestCity) pref = nearestCity.pref;
-                    }
-                    if (!pref) pref = '不明';
-                    
-                    const key = `${pref}_${name}`;
+
+                    const roundedLat = Math.round(coords[0] * 10);
+                    const roundedLng = Math.round(coords[1] * 10);
+                    const key = `${name}_${roundedLat}_${roundedLng}`;
                     
                     if (stationMap.has(key)) {
                         const existing = stationMap.get(key);
@@ -841,7 +852,6 @@
                     } else {
                         stationMap.set(key, {
                             name,
-                            pref,
                             railways: [{ operator, railway }],
                             coordinates: coords,
                             coordsList: [coords]
@@ -850,13 +860,18 @@
                 });
                 
                 stationMap.forEach((station, key) => {
-                    const id = `sta_${key}`.replace(/\s/g, '_');
+                    let pref = '不明';
+                    if (cityIndex.length > 0) {
+                        const nearestCity = findNearestCityFull(station.coordinates);
+                        if (nearestCity && nearestCity.pref) pref = nearestCity.pref;
+                    }
+                    const id = `sta_${pref}_${station.name}`.replace(/\s/g, '_');
                     const cityCode = findNearestCity(station.coordinates);
                     delete station.coordsList;
                     stationIndex.push({
                         id,
                         name: station.name,
-                        pref: station.pref,
+                        pref,
                         railways: station.railways,
                         cityCode,
                         coordinates: station.coordinates
@@ -868,7 +883,8 @@
         async function loadRailways() {
             try {
                 const response = await fetch('data/railways.geojson');
-                const geojson = await response.json();
+                const buf = await response.arrayBuffer();
+                const geojson = JSON.parse(new TextDecoder('utf-8').decode(buf));
                 const seen = new Set();
                 
                 geojson.features.forEach(f => {
@@ -1224,8 +1240,9 @@
                     let sub = '';
                     if (type === 'station') {
                         mainText = `${item.name}駅（${item.pref}）`;
-                        const railwayText = item.railways.map(r => r.railway).join(' / ');
-                        sub = `${item.railways[0].operator} / ${railwayText}`;
+                        const companies = [...new Set(item.railways.map(r => r.railway))].join('・');
+                        const lines = item.railways.map(r => r.operator).join('・');
+                        sub = `${companies} / ${lines}`;
                     } else {
                         mainText = item.name;
                         sub = item.pref;
@@ -1262,8 +1279,9 @@
             
             if (fromTabType === 'station') {
                 document.getElementById('fromPreviewName').textContent = `${item.name}駅（${item.pref}）`;
-                const railwayText = item.railways.map(r => r.railway).join(' / ');
-                document.getElementById('fromPreviewSub').textContent = `${item.railways[0].operator} / ${railwayText}`;
+                const fromCompanies = [...new Set(item.railways.map(r => r.railway))].join('・');
+                const fromLines = item.railways.map(r => r.operator).join('・');
+                document.getElementById('fromPreviewSub').textContent = `${fromCompanies} / ${fromLines}`;
             } else {
                 document.getElementById('fromPreviewName').textContent = item.name;
                 document.getElementById('fromPreviewSub').textContent = item.pref;
@@ -1294,8 +1312,9 @@
             
             if (toTabType === 'station') {
                 document.getElementById('toPreviewName').textContent = `${item.name}駅（${item.pref}）`;
-                const railwayText = item.railways.map(r => r.railway).join(' / ');
-                document.getElementById('toPreviewSub').textContent = `${item.railways[0].operator} / ${railwayText}`;
+                const toCompanies = [...new Set(item.railways.map(r => r.railway))].join('・');
+                const toLines = item.railways.map(r => r.operator).join('・');
+                document.getElementById('toPreviewSub').textContent = `${toCompanies} / ${toLines}`;
             } else {
                 document.getElementById('toPreviewName').textContent = item.name;
                 document.getElementById('toPreviewSub').textContent = item.pref;
