@@ -6,7 +6,7 @@
     <title>LifeTrace v1.2 - 移動の軌跡</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+    <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -696,13 +696,24 @@
         let editingTripId = null;
 
         async function init() {
-            loadData();
-            await loadCities();
-            await Promise.all([loadStations(), loadRailways()]);
-            initMap();
-            setupInputs();
-            updateUI();
-            document.getElementById('tripDate').value = new Date().toISOString().split('T')[0];
+            try {
+                console.log('[LifeTrace] init start');
+                loadData();
+                console.log('[LifeTrace] loadData done');
+                await loadCities();
+                console.log('[LifeTrace] loadCities done:', cityIndex.length, 'cities');
+                await Promise.all([loadStations(), loadRailways()]);
+                console.log('[LifeTrace] loadStations done:', stationIndex.length, 'stations');
+                console.log('[LifeTrace] loadRailways done:', railwayIndex.length, 'railways');
+                initMap();
+                console.log('[LifeTrace] initMap done');
+                setupInputs();
+                updateUI();
+                document.getElementById('tripDate').value = new Date().toISOString().split('T')[0];
+                console.log('[LifeTrace] init complete');
+            } catch (e) {
+                console.error('[LifeTrace] init failed:', e);
+            }
         }
 
         function loadData() {
@@ -805,7 +816,9 @@
                         : { type: 'FeatureCollection', features: entry.features };
                     cityIndex.push({ code: entry.code, name: entry.name, pref: entry.pref, coordinates: entry.coordinates, geom });
                 });
-            } catch (e) {}
+            } catch (e) {
+                console.error('[LifeTrace] loadCities failed:', e);
+            }
         }
 
         async function loadStations() {
@@ -889,7 +902,9 @@
                         coordinates: station.coordinates
                     });
                 });
-            } catch (e) {}
+            } catch (e) {
+                console.error('[LifeTrace] loadStations failed:', e);
+            }
         }
 
         async function loadRailways() {
@@ -925,7 +940,9 @@
                         lines: merged
                     });
                 });
-            } catch (e) {}
+            } catch (e) {
+                console.error('[LifeTrace] loadRailways failed:', e);
+            }
         }
 
         const cityLookupCache = new Map();
@@ -1554,7 +1571,11 @@
             updateUI();
         }
 
-        window.addEventListener('DOMContentLoaded', init);
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', init);
+        } else {
+            init();
+        }
     </script>
 </body>
 </html>
