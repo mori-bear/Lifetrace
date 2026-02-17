@@ -928,30 +928,42 @@
             } catch (e) {}
         }
 
-        function findNearestCity(coords) {
-            let minDist = Infinity;
-            let nearestCode = null;
-            cityIndex.forEach(city => {
-                const dist = haversineDistance(coords, city.coordinates);
-                if (dist < minDist) {
-                    minDist = dist;
-                    nearestCode = city.code;
+        const cityLookupCache = new Map();
+
+        function findCityByPoint(coords) {
+            const key = coords[0].toFixed(5) + ',' + coords[1].toFixed(5);
+            if (cityLookupCache.has(key)) return cityLookupCache.get(key);
+
+            const pt = turf.point([coords[1], coords[0]]);
+            let result = null;
+
+            for (const city of cityIndex) {
+                if (!city.geom) continue;
+                const feats = city.geom.type === 'FeatureCollection'
+                    ? city.geom.features : [city.geom];
+                for (const f of feats) {
+                    if (!f.geometry) continue;
+                    try {
+                        if (turf.booleanPointInPolygon(pt, f)) {
+                            result = city;
+                            break;
+                        }
+                    } catch (e) {}
                 }
-            });
-            return nearestCode;
+                if (result) break;
+            }
+
+            cityLookupCache.set(key, result);
+            return result;
+        }
+
+        function findNearestCity(coords) {
+            const city = findCityByPoint(coords);
+            return city ? city.code : null;
         }
 
         function findNearestCityFull(coords) {
-            let minDist = Infinity;
-            let nearestCity = null;
-            cityIndex.forEach(city => {
-                const dist = haversineDistance(coords, city.coordinates);
-                if (dist < minDist) {
-                    minDist = dist;
-                    nearestCity = city;
-                }
-            });
-            return nearestCity;
+            return findCityByPoint(coords);
         }
 
         function haversineDistance([lat1, lng1], [lat2, lng2]) {
@@ -1153,7 +1165,10 @@
             
             const stats = deriveStats();
             
+            const renderedCodes = new Set();
             stats.visitedCities.forEach(code => {
+                if (renderedCodes.has(code)) return;
+                renderedCodes.add(code);
                 const city = cityIndex.find(c => c.code === code);
                 if (city && city.geom) {
                     L.geoJSON(city.geom, {
