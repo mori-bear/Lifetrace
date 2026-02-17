@@ -761,17 +761,21 @@
                 const response = await fetch('data/cities.geojson');
                 const buf = await response.arrayBuffer();
                 const geojson = JSON.parse(new TextDecoder('utf-8').decode(buf));
-                const seen = new Set();
+                const cityMap = new Map();
 
                 geojson.features.forEach(f => {
                     const code = f.properties.N03_007;
-                    if (!code || seen.has(code)) return;
-                    seen.add(code);
+                    if (!code) return;
+
+                    if (cityMap.has(code)) {
+                        cityMap.get(code).features.push(f);
+                        return;
+                    }
 
                     const pref = PREF_NAMES[code.substring(0, 2)] || '';
                     const county = f.properties.N03_003 || '';
                     const city = f.properties.N03_004 || '';
-                    
+
                     let name = '';
                     if (county && city) {
                         name = `${county} ${city}`;
@@ -780,7 +784,7 @@
                     } else {
                         return;
                     }
-                    
+
                     let coords = [35, 135];
                     try {
                         if (f.geometry) {
@@ -791,8 +795,15 @@
                             }
                         }
                     } catch (e) {}
-                    
-                    cityIndex.push({ code, name, pref, coordinates: coords, geom: f });
+
+                    cityMap.set(code, { code, name, pref, coordinates: coords, features: [f] });
+                });
+
+                cityMap.forEach(entry => {
+                    const geom = entry.features.length === 1
+                        ? entry.features[0]
+                        : { type: 'FeatureCollection', features: entry.features };
+                    cityIndex.push({ code: entry.code, name: entry.name, pref: entry.pref, coordinates: entry.coordinates, geom });
                 });
             } catch (e) {}
         }
