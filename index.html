@@ -6,7 +6,7 @@
     <title>LifeTrace v1.2 - 移動の軌跡</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+    <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -696,13 +696,24 @@
         let editingTripId = null;
 
         async function init() {
-            loadData();
-            await loadCities();
-            await Promise.all([loadStations(), loadRailways()]);
-            initMap();
-            setupInputs();
-            updateUI();
-            document.getElementById('tripDate').value = new Date().toISOString().split('T')[0];
+            try {
+                console.log('[LifeTrace] init start');
+                loadData();
+                console.log('[LifeTrace] loadData done');
+                await loadCities();
+                console.log('[LifeTrace] loadCities done:', cityIndex.length, 'cities');
+                await Promise.all([loadStations(), loadRailways()]);
+                console.log('[LifeTrace] loadStations done:', stationIndex.length, 'stations');
+                console.log('[LifeTrace] loadRailways done:', railwayIndex.length, 'railways');
+                initMap();
+                console.log('[LifeTrace] initMap done');
+                setupInputs();
+                updateUI();
+                document.getElementById('tripDate').value = new Date().toISOString().split('T')[0];
+                console.log('[LifeTrace] init complete');
+            } catch (e) {
+                console.error('[LifeTrace] init failed:', e);
+            }
         }
 
         function loadData() {
@@ -711,7 +722,9 @@
                 try {
                     data = JSON.parse(stored);
                     if (!data.usedSegments) data.usedSegments = {};
-                } catch (e) {}
+                } catch (e) {
+                    console.warn('[LifeTrace] loadData parse failed, using defaults:', e);
+                }
             }
             ensureYearData(currentYear);
         }
@@ -759,6 +772,7 @@
         async function loadCities() {
             try {
                 const response = await fetch('data/cities.geojson');
+                if (!response.ok) throw new Error('cities.geojson: ' + response.status);
                 const buf = await response.arrayBuffer();
                 const geojson = JSON.parse(new TextDecoder('utf-8').decode(buf));
                 const cityMap = new Map();
@@ -803,15 +817,34 @@
                     const geom = entry.features.length === 1
                         ? entry.features[0]
                         : { type: 'FeatureCollection', features: entry.features };
-                    cityIndex.push({ code: entry.code, name: entry.name, pref: entry.pref, coordinates: entry.coordinates, geom });
+                    let minLng = Infinity, maxLng = -Infinity, minLat = Infinity, maxLat = -Infinity;
+                    for (const f of entry.features) {
+                        if (!f.geometry || !f.geometry.coordinates) continue;
+                        const polys = f.geometry.type === 'MultiPolygon' ? f.geometry.coordinates : [f.geometry.coordinates];
+                        for (const poly of polys) {
+                            for (const ring of poly) {
+                                for (const c of ring) {
+                                    if (c[0] < minLng) minLng = c[0];
+                                    if (c[0] > maxLng) maxLng = c[0];
+                                    if (c[1] < minLat) minLat = c[1];
+                                    if (c[1] > maxLat) maxLat = c[1];
+                                }
+                            }
+                        }
+                    }
+                    const bbox = [minLng, minLat, maxLng, maxLat];
+                    cityIndex.push({ code: entry.code, name: entry.name, pref: entry.pref, coordinates: entry.coordinates, geom, bbox });
                 });
-            } catch (e) {}
+            } catch (e) {
+                console.error('[LifeTrace] loadCities failed:', e);
+            }
         }
 
         async function loadStations() {
             try {
                 stationIndex = [];
                 const response = await fetch('data/stations.geojson');
+                if (!response.ok) throw new Error('stations.geojson: ' + response.status);
                 const buf = await response.arrayBuffer();
                 const geojson = JSON.parse(new TextDecoder('utf-8').decode(buf));
                 const stationMap = new Map();
@@ -889,12 +922,15 @@
                         coordinates: station.coordinates
                     });
                 });
-            } catch (e) {}
+            } catch (e) {
+                console.error('[LifeTrace] loadStations failed:', e);
+            }
         }
 
         async function loadRailways() {
             try {
                 const response = await fetch('data/railways.geojson');
+                if (!response.ok) throw new Error('railways.geojson: ' + response.status);
                 const buf = await response.arrayBuffer();
                 const geojson = JSON.parse(new TextDecoder('utf-8').decode(buf));
                 const railwayMap = new Map();
@@ -910,6 +946,7 @@
                     }
 
                     const entry = railwayMap.get(key);
+                    if (!f.geometry) return;
                     if (f.geometry.type === 'LineString') {
                         entry.allLines.push(f.geometry.coordinates);
                     } else if (f.geometry.type === 'MultiLineString') {
@@ -925,7 +962,9 @@
                         lines: merged
                     });
                 });
-            } catch (e) {}
+            } catch (e) {
+                console.error('[LifeTrace] loadRailways failed:', e);
+            }
         }
 
         const cityLookupCache = new Map();
@@ -934,11 +973,13 @@
             const key = coords[0].toFixed(5) + ',' + coords[1].toFixed(5);
             if (cityLookupCache.has(key)) return cityLookupCache.get(key);
 
-            const pt = turf.point([coords[1], coords[0]]);
+            const lng = coords[1], lat = coords[0];
+            const pt = turf.point([lng, lat]);
             let result = null;
 
             for (const city of cityIndex) {
-                if (!city.geom) continue;
+                if (!city.geom || !city.bbox) continue;
+                if (lng < city.bbox[0] || lng > city.bbox[2] || lat < city.bbox[1] || lat > city.bbox[3]) continue;
                 const feats = city.geom.type === 'FeatureCollection'
                     ? city.geom.features : [city.geom];
                 for (const f of feats) {
@@ -1554,7 +1595,11 @@
             updateUI();
         }
 
-        window.addEventListener('DOMContentLoaded', init);
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', init);
+        } else {
+            init();
+        }
     </script>
 </body>
 </html>
