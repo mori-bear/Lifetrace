@@ -691,6 +691,8 @@
         let data = { version: '1.2', years: {}, usedSegments: {} };
         let map, cityLayer, stationLayer, railwayBaseLayer, railwayUsedLayer, previewLayer;
         let cityIndex = [], stationIndex = [], railwayIndex = [];
+        const GRID_SIZE = 0.5;
+        let cityGrid = {};
         let selectedFrom = null, selectedTo = null;
         let fromTabType = 'station', toTabType = 'station';
         let editingTripId = null;
@@ -835,6 +837,22 @@
                     const bbox = [minLng, minLat, maxLng, maxLat];
                     cityIndex.push({ code: entry.code, name: entry.name, pref: entry.pref, coordinates: entry.coordinates, geom, bbox });
                 });
+
+                cityGrid = {};
+                cityIndex.forEach(city => {
+                    if (!city.bbox) return;
+                    const gMinX = Math.floor(city.bbox[0] / GRID_SIZE);
+                    const gMaxX = Math.floor(city.bbox[2] / GRID_SIZE);
+                    const gMinY = Math.floor(city.bbox[1] / GRID_SIZE);
+                    const gMaxY = Math.floor(city.bbox[3] / GRID_SIZE);
+                    for (let gx = gMinX; gx <= gMaxX; gx++) {
+                        for (let gy = gMinY; gy <= gMaxY; gy++) {
+                            const k = gx + ',' + gy;
+                            if (!cityGrid[k]) cityGrid[k] = [];
+                            cityGrid[k].push(city);
+                        }
+                    }
+                });
             } catch (e) {
                 console.error('[LifeTrace] loadCities failed:', e);
             }
@@ -970,31 +988,34 @@
         const cityLookupCache = new Map();
 
         function findCityByPoint(coords) {
-            const key = coords[0].toFixed(5) + ',' + coords[1].toFixed(5);
-            if (cityLookupCache.has(key)) return cityLookupCache.get(key);
+            const cacheKey = coords[0].toFixed(5) + ',' + coords[1].toFixed(5);
+            if (cityLookupCache.has(cacheKey)) return cityLookupCache.get(cacheKey);
 
             const lng = coords[1], lat = coords[0];
-            const pt = turf.point([lng, lat]);
+            const gridKey = Math.floor(lng / GRID_SIZE) + ',' + Math.floor(lat / GRID_SIZE);
+            const candidates = cityGrid[gridKey];
             let result = null;
 
-            for (const city of cityIndex) {
-                if (!city.geom || !city.bbox) continue;
-                if (lng < city.bbox[0] || lng > city.bbox[2] || lat < city.bbox[1] || lat > city.bbox[3]) continue;
-                const feats = city.geom.type === 'FeatureCollection'
-                    ? city.geom.features : [city.geom];
-                for (const f of feats) {
-                    if (!f.geometry) continue;
-                    try {
-                        if (turf.booleanPointInPolygon(pt, f)) {
-                            result = city;
-                            break;
-                        }
-                    } catch (e) {}
+            if (candidates) {
+                const pt = turf.point([lng, lat]);
+                for (const city of candidates) {
+                    if (lng < city.bbox[0] || lng > city.bbox[2] || lat < city.bbox[1] || lat > city.bbox[3]) continue;
+                    const feats = city.geom.type === 'FeatureCollection'
+                        ? city.geom.features : [city.geom];
+                    for (const f of feats) {
+                        if (!f.geometry) continue;
+                        try {
+                            if (turf.booleanPointInPolygon(pt, f)) {
+                                result = city;
+                                break;
+                            }
+                        } catch (e) {}
+                    }
+                    if (result) break;
                 }
-                if (result) break;
             }
 
-            cityLookupCache.set(key, result);
+            cityLookupCache.set(cacheKey, result);
             return result;
         }
 
